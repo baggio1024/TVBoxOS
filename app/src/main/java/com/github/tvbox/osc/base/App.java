@@ -1,6 +1,9 @@
 package com.github.tvbox.osc.base;
 
 import android.app.Activity;
+import android.content.Context;
+import android.os.Build;
+import android.os.Process;
 import androidx.multidex.MultiDexApplication;
 
 import com.github.tvbox.osc.bean.VodInfo;
@@ -21,6 +24,9 @@ import com.p2p.P2PClass;
 import com.whl.quickjs.android.QuickJSLoader;
 import com.github.catvod.crawler.JsLoader;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
+
 import me.jessyan.autosize.AutoSizeConfig;
 import me.jessyan.autosize.unit.Subunits;
 
@@ -36,37 +42,162 @@ public class App extends MultiDexApplication {
     public static String burl;
     private static String dashData;
 
+    private Thread.UncaughtExceptionHandler mDefaultHandler;
+
     @Override
     public void onCreate() {
         super.onCreate();
         instance = this;
-        initParams();
-        // OKGo
-        OkGoHelper.init(); //台标获取
-        EpgUtil.init();
-        // 初始化Web服务器
+        initCrashHandler();
+        
+        // 同步初始化 Hawk (配置存储库)
+        Hawk.init(this).build();
+        
+        // 同步初始化 OkGo 网络库，防止 Activity 启动时 client 为 null 导致崩溃
+        try {
+            OkGoHelper.init();
+        } catch (Throwable th) {
+            LOG.e("OkGoHelper init error: " + th.getMessage());
+        }
+
         ControlManager.init(this);
-        //初始化数据库
-        AppDataManager.init();
-        LoadSir.beginBuilder()
-                .addCallback(new EmptyCallback())
-                .addCallback(new LoadingCallback())
-                .commit();
-        AutoSizeConfig.getInstance().setCustomFragment(true).getUnitsManager()
-                .setSupportDP(false)
-                .setSupportSP(false)
-                .setSupportSubunits(Subunits.MM);
-        PlayerHelper.init();
-        QuickJSLoader.init();
-        FileUtils.cleanPlayerCache();
+        
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    initParams();
+                } catch (Throwable th) {
+                    LOG.e("initParams error: " + th.getMessage());
+                }
+            }
+        }).start();
+        
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    EpgUtil.init();
+                } catch (Throwable th) {
+                    LOG.e("EpgUtil init error: " + th.getMessage());
+                }
+            }
+        }).start();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ControlManager.get().startServer();
+                } catch (Throwable th) {
+                    LOG.e("ControlManager startServer error: " + th.getMessage());
+                }
+            }
+        }).start();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    AppDataManager.init();
+                } catch (Throwable th) {
+                    LOG.e("AppDataManager init error: " + th.getMessage());
+                }
+            }
+        }).start();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    LoadSir.beginBuilder()
+                            .addCallback(new EmptyCallback())
+                            .addCallback(new LoadingCallback())
+                            .commit();
+                } catch (Throwable th) {
+                    LOG.e("LoadSir init error: " + th.getMessage());
+                }
+            }
+        }).start();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    AutoSizeConfig.getInstance().setCustomFragment(true).getUnitsManager()
+                            .setSupportDP(false)
+                            .setSupportSP(false)
+                            .setSupportSubunits(Subunits.MM);
+                } catch (Throwable th) {
+                    LOG.e("AutoSizeConfig init error: " + th.getMessage());
+                }
+            }
+        }).start();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    PlayerHelper.init();
+                } catch (Throwable th) {
+                    LOG.e("PlayerHelper init error: " + th.getMessage());
+                }
+            }
+        }).start();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    QuickJSLoader.init();
+                } catch (Throwable th) {
+                    LOG.e("QuickJSLoader init error: " + th.getMessage());
+                }
+            }
+        }).start();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    FileUtils.cleanPlayerCache();
+                } catch (Throwable th) {
+                    LOG.e("cleanPlayerCache error: " + th.getMessage());
+                }
+            }
+        }).start();
+    }
+
+    private void initCrashHandler() {
+        mDefaultHandler = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+            @Override
+            public void uncaughtException(Thread thread, Throwable ex) {
+                StringWriter sw = new StringWriter();
+                PrintWriter pw = new PrintWriter(sw);
+                ex.printStackTrace(pw);
+                String stackTrace = sw.toString();
+                LOG.e("UncaughtException: " + stackTrace);
+                android.util.Log.e("TVBox-Crash", stackTrace);
+                if (mDefaultHandler != null) {
+                    mDefaultHandler.uncaughtException(thread, ex);
+                } else {
+                    Process.killProcess(Process.myPid());
+                    System.exit(1);
+                }
+            }
+        });
     }
 
     private void initParams() {
-        // Hawk
-        Hawk.init(this).build();
+        // Hawk 已经在同步代码块中初始化，这里补充逻辑
         Hawk.put(HawkConfig.DEBUG_OPEN, false);
         if (!Hawk.contains(HawkConfig.PLAY_TYPE)) {
             Hawk.put(HawkConfig.PLAY_TYPE, 1);
+        }
+        
+        // 设置默认配置
+        if (!Hawk.contains(HawkConfig.HOME_REC_STYLE)) {
+            Hawk.put(HawkConfig.HOME_REC_STYLE, true); // 首页多行默认开启
+        }
+        if (!Hawk.contains(HawkConfig.SEARCH_VIEW)) {
+            Hawk.put(HawkConfig.SEARCH_VIEW, 1); // 搜索展示默认 缩略图 (1)
+        }
+        if (!Hawk.contains(HawkConfig.FAST_SEARCH_MODE)) {
+            Hawk.put(HawkConfig.FAST_SEARCH_MODE, true); // 聚合搜索默认开启
         }
     }
 

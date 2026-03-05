@@ -212,8 +212,11 @@ public final class IjkMediaPlayer extends AbstractMediaPlayer {
     private static void initNativeOnce() {
         synchronized (IjkMediaPlayer.class) {
             if (!mIsNativeInitialized) {
-                native_init();
-                IjkMediaPlayer.native_setDot(dotOpen ? dotPort : 0);
+                try {
+                    native_init();
+                } catch (Throwable th) {
+                    th.printStackTrace();
+                }
                 mIsNativeInitialized = true;
             }
         }
@@ -258,7 +261,9 @@ public final class IjkMediaPlayer extends AbstractMediaPlayer {
          * Native setup requires a weak reference to our object. It's easier to
          * create it here than in C++.
          */
-        native_setup(new WeakReference<IjkMediaPlayer>(this));
+        try {
+            native_setup(new WeakReference<IjkMediaPlayer>(this));
+        } catch (Throwable ignored) {}
     }
 
     private native void _setFrameAtTime(String imgCachePath, long startTime, long endTime, int num, int imgDefinition)
@@ -950,6 +955,26 @@ public final class IjkMediaPlayer extends AbstractMediaPlayer {
         // do nothing
     }
 
+    public static void setDotPort(boolean open, int p) {
+        try {
+            // native_setDot(open, p);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static void toggleDotPort(boolean open) {
+    }
+
+    public static native void native_setDot(int port);
+
+    public static native void native_profileBegin(String libName);
+
+    public static native void native_profileEnd();
+
+    public static native void native_setLogLevel(int level);
+
+    public static native void native_setReqLevel(int level);
+
     private static native void native_init();
 
     private native void native_setup(Object IjkMediaPlayer_this);
@@ -958,17 +983,186 @@ public final class IjkMediaPlayer extends AbstractMediaPlayer {
 
     private native void native_message_loop(Object IjkMediaPlayer_this);
 
-    protected void finalize() throws Throwable {
-        super.finalize();
-        native_finalize();
+    public interface OnControlMessageListener {
+        String onControlResolveSegmentUrl(int segment);
     }
 
-    public void httphookReconnect() {
-        _setPropertyLong(FFP_PROP_INT64_IMMEDIATE_RECONNECT, 1);
+    private OnControlMessageListener mOnControlMessageListener;
+
+    public void setOnControlMessageListener(OnControlMessageListener listener) {
+        mOnControlMessageListener = listener;
     }
 
-    public void setCacheShare(int share) {
-        _setPropertyLong(FFP_PROP_INT64_SHARE_CACHE_DATA, (long) share);
+    public interface OnNativeInvokeListener {
+
+        int CTRL_WILL_TCP_OPEN = 0x20001;               // NO ARGS
+        int CTRL_DID_TCP_OPEN = 0x20002;                // ARG_ERROR, ARG_FAMILIY, ARG_IP, ARG_PORT, ARG_FD
+
+        int CTRL_WILL_HTTP_OPEN = 0x20003;              // ARG_URL, ARG_SEGMENT_INDEX, ARG_RETRY_COUNTER
+        int CTRL_WILL_LIVE_OPEN = 0x20005;              // ARG_URL, ARG_RETRY_COUNTER
+        int CTRL_WILL_CONCAT_RESOLVE_SEGMENT = 0x20007; // ARG_URL, ARG_SEGMENT_INDEX, ARG_RETRY_COUNTER
+
+        int EVENT_WILL_HTTP_OPEN = 0x1;                 // ARG_URL
+        int EVENT_DID_HTTP_OPEN = 0x2;                  // ARG_URL, ARG_ERROR, ARG_HTTP_CODE
+        int EVENT_WILL_HTTP_SEEK = 0x3;                 // ARG_URL, ARG_OFFSET
+        int EVENT_DID_HTTP_SEEK = 0x4;                  // ARG_URL, ARG_OFFSET, ARG_ERROR, ARG_HTTP_CODE, ARG_FILE_SIZE
+
+        String ARG_URL = "url";
+        String ARG_SEGMENT_INDEX = "segment_index";
+        String ARG_RETRY_COUNTER = "retry_counter";
+
+        String ARG_ERROR = "error";
+        String ARG_FAMILIY = "family";
+        String ARG_IP = "ip";
+        String ARG_PORT = "port";
+        String ARG_FD = "fd";
+
+        String ARG_OFFSET = "offset";
+        String ARG_HTTP_CODE = "http_code";
+        String ARG_FILE_SIZE = "file_size";
+
+        /*
+         * @return true if invoke is handled
+         * @throws Exception on any error
+         */
+        boolean onNativeInvoke(int what, Bundle args);
+    }
+
+    private OnNativeInvokeListener mOnNativeInvokeListener;
+
+    public void setOnNativeInvokeListener(OnNativeInvokeListener listener) {
+        mOnNativeInvokeListener = listener;
+    }
+
+    @CalledByNative
+    private static boolean onNativeInvoke(Object weakThiz, int what, Bundle args) {
+        DebugLog.ifmt(TAG, "onNativeInvoke %d", what);
+        if (weakThiz == null || !(weakThiz instanceof WeakReference<?>))
+            throw new IllegalStateException("<null weakThiz>.onNativeInvoke()");
+
+        @SuppressWarnings("unchecked")
+        WeakReference<IjkMediaPlayer> weakPlayer = (WeakReference<IjkMediaPlayer>) weakThiz;
+        IjkMediaPlayer player = weakPlayer.get();
+        if (player == null)
+            throw new IllegalStateException("<null weakPlayer>.onNativeInvoke()");
+
+        OnNativeInvokeListener listener = player.mOnNativeInvokeListener;
+        if (listener != null && listener.onNativeInvoke(what, args))
+            return true;
+
+        switch (what) {
+            case OnNativeInvokeListener.CTRL_WILL_CONCAT_RESOLVE_SEGMENT: {
+                OnControlMessageListener onControlMessageListener = player.mOnControlMessageListener;
+                if (onControlMessageListener == null)
+                    return false;
+
+                int segmentIndex = args.getInt(OnNativeInvokeListener.ARG_SEGMENT_INDEX, -1);
+                if (segmentIndex < 0)
+                    throw new InvalidParameterException("onNativeInvoke(invalid segment index)");
+
+                String newUrl = onControlMessageListener.onControlResolveSegmentUrl(segmentIndex);
+                if (newUrl == null)
+                    throw new RuntimeException(new IOException("onNativeInvoke() = <NULL newUrl>"));
+
+                args.putString(OnNativeInvokeListener.ARG_URL, newUrl);
+                return true;
+            }
+            default:
+                return false;
+        }
+    }
+
+    public interface OnMediaCodecSelectListener {
+        String onMediaCodecSelect(IMediaPlayer mp, String mimeType, int profile, int level);
+    }
+
+    private OnMediaCodecSelectListener mOnMediaCodecSelectListener;
+
+    public void setOnMediaCodecSelectListener(OnMediaCodecSelectListener listener) {
+        mOnMediaCodecSelectListener = listener;
+    }
+
+    @CalledByNative
+    private static String onSelectCodec(Object weakThiz, String mimeType, int profile, int level) {
+        if (weakThiz == null || !(weakThiz instanceof WeakReference<?>))
+            return null;
+
+        @SuppressWarnings("unchecked")
+        WeakReference<IjkMediaPlayer> weakPlayer = (WeakReference<IjkMediaPlayer>) weakThiz;
+        IjkMediaPlayer player = weakPlayer.get();
+        if (player == null)
+            return null;
+
+        OnMediaCodecSelectListener listener = player.mOnMediaCodecSelectListener;
+        if (listener == null)
+            listener = DefaultMediaCodecSelector.sInstance;
+
+        return listener.onMediaCodecSelect(player, mimeType, profile, level);
+    }
+
+    public static class DefaultMediaCodecSelector implements OnMediaCodecSelectListener {
+        public static final DefaultMediaCodecSelector sInstance = new DefaultMediaCodecSelector();
+
+        @SuppressWarnings("deprecation")
+        @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
+        public String onMediaCodecSelect(IMediaPlayer mp, String mimeType, int profile, int level) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN)
+                return null;
+
+            if (TextUtils.isEmpty(mimeType))
+                return null;
+
+            Log.i(TAG, String.format(Locale.US, "onSelectCodec: mime=%s, profile=%d, level=%d", mimeType, profile, level));
+            ArrayList<IjkMediaCodecInfo> candidateCodecList = new ArrayList<IjkMediaCodecInfo>();
+            int numCodecs = MediaCodecList.getCodecCount();
+            for (int i = 0; i < numCodecs; i++) {
+                MediaCodecInfo codecInfo = MediaCodecList.getCodecInfoAt(i);
+                Log.d(TAG, String.format(Locale.US, "  found codec: %s", codecInfo.getName()));
+                if (codecInfo.isEncoder())
+                    continue;
+
+                String[] types = codecInfo.getSupportedTypes();
+                if (types == null)
+                    continue;
+
+                for (String type : types) {
+                    if (TextUtils.isEmpty(type))
+                        continue;
+
+                    Log.d(TAG, String.format(Locale.US, "    mime: %s", type));
+                    if (!type.equalsIgnoreCase(mimeType))
+                        continue;
+
+                    IjkMediaCodecInfo candidate = IjkMediaCodecInfo.setupCandidate(codecInfo, mimeType);
+                    if (candidate == null)
+                        continue;
+
+                    candidateCodecList.add(candidate);
+                    Log.i(TAG, String.format(Locale.US, "candidate codec: %s rank=%d", codecInfo.getName(), candidate.mRank));
+                    candidate.dumpProfileLevels(mimeType);
+                }
+            }
+
+            if (candidateCodecList.isEmpty()) {
+                return null;
+            }
+
+            IjkMediaCodecInfo bestCodec = candidateCodecList.get(0);
+
+            for (IjkMediaCodecInfo codec : candidateCodecList) {
+                if (codec.mRank > bestCodec.mRank) {
+                    bestCodec = codec;
+                }
+            }
+
+            if (bestCodec.mRank < IjkMediaCodecInfo.RANK_LAST_CHANCE) {
+                Log.w(TAG, String.format(Locale.US, "unaccetable codec: %s", bestCodec.mCodecInfo.getName()));
+                return null;
+            }
+
+            Log.i(TAG, String.format(Locale.US, "selected codec: %s rank=%d", bestCodec.mCodecInfo.getName(), bestCodec.mRank));
+            return bestCodec.mCodecInfo.getName();
+        }
     }
 
     private static class EventHandler extends Handler {
@@ -1087,13 +1281,6 @@ public final class IjkMediaPlayer extends AbstractMediaPlayer {
         }
     }
 
-    /*
-     * Called from native code when an interesting event happens. This method
-     * just uses the EventHandler system to post the event back to the main app
-     * thread. We use a weak reference to the original IjkMediaPlayer object so
-     * that the native code is safe from the object disappearing from underneath
-     * it. (This is the cookie passed to native_setup().)
-     */
     @CalledByNative
     private static void postEventFromNative(Object weakThiz, int what,
                                             int arg1, int arg2, Object obj) {
@@ -1116,228 +1303,4 @@ public final class IjkMediaPlayer extends AbstractMediaPlayer {
             mp.mEventHandler.sendMessage(m);
         }
     }
-
-    /*
-     * ControlMessage
-     */
-
-    private OnControlMessageListener mOnControlMessageListener;
-
-    public void setOnControlMessageListener(OnControlMessageListener listener) {
-        mOnControlMessageListener = listener;
-    }
-
-    public interface OnControlMessageListener {
-        String onControlResolveSegmentUrl(int segment);
-    }
-
-    /*
-     * NativeInvoke
-     */
-
-    private OnNativeInvokeListener mOnNativeInvokeListener;
-
-    public void setOnNativeInvokeListener(OnNativeInvokeListener listener) {
-        mOnNativeInvokeListener = listener;
-    }
-
-    public interface OnNativeInvokeListener {
-
-        int CTRL_WILL_TCP_OPEN = 0x20001;               // NO ARGS
-        int CTRL_DID_TCP_OPEN = 0x20002;                // ARG_ERROR, ARG_FAMILIY, ARG_IP, ARG_PORT, ARG_FD
-
-        int CTRL_WILL_HTTP_OPEN = 0x20003;              // ARG_URL, ARG_SEGMENT_INDEX, ARG_RETRY_COUNTER
-        int CTRL_WILL_LIVE_OPEN = 0x20005;              // ARG_URL, ARG_RETRY_COUNTER
-        int CTRL_WILL_CONCAT_RESOLVE_SEGMENT = 0x20007; // ARG_URL, ARG_SEGMENT_INDEX, ARG_RETRY_COUNTER
-
-        int EVENT_WILL_HTTP_OPEN = 0x1;                 // ARG_URL
-        int EVENT_DID_HTTP_OPEN = 0x2;                  // ARG_URL, ARG_ERROR, ARG_HTTP_CODE
-        int EVENT_WILL_HTTP_SEEK = 0x3;                 // ARG_URL, ARG_OFFSET
-        int EVENT_DID_HTTP_SEEK = 0x4;                  // ARG_URL, ARG_OFFSET, ARG_ERROR, ARG_HTTP_CODE, ARG_FILE_SIZE
-
-        String ARG_URL = "url";
-        String ARG_SEGMENT_INDEX = "segment_index";
-        String ARG_RETRY_COUNTER = "retry_counter";
-
-        String ARG_ERROR = "error";
-        String ARG_FAMILIY = "family";
-        String ARG_IP = "ip";
-        String ARG_PORT = "port";
-        String ARG_FD = "fd";
-
-        String ARG_OFFSET = "offset";
-        String ARG_HTTP_CODE = "http_code";
-        String ARG_FILE_SIZE = "file_size";
-
-        /*
-         * @return true if invoke is handled
-         * @throws Exception on any error
-         */
-        boolean onNativeInvoke(int what, Bundle args);
-    }
-
-    @CalledByNative
-    private static boolean onNativeInvoke(Object weakThiz, int what, Bundle args) {
-        DebugLog.ifmt(TAG, "onNativeInvoke %d", what);
-        if (weakThiz == null || !(weakThiz instanceof WeakReference<?>))
-            throw new IllegalStateException("<null weakThiz>.onNativeInvoke()");
-
-        @SuppressWarnings("unchecked")
-        WeakReference<IjkMediaPlayer> weakPlayer = (WeakReference<IjkMediaPlayer>) weakThiz;
-        IjkMediaPlayer player = weakPlayer.get();
-        if (player == null)
-            throw new IllegalStateException("<null weakPlayer>.onNativeInvoke()");
-
-        OnNativeInvokeListener listener = player.mOnNativeInvokeListener;
-        if (listener != null && listener.onNativeInvoke(what, args))
-            return true;
-
-        switch (what) {
-            case OnNativeInvokeListener.CTRL_WILL_CONCAT_RESOLVE_SEGMENT: {
-                OnControlMessageListener onControlMessageListener = player.mOnControlMessageListener;
-                if (onControlMessageListener == null)
-                    return false;
-
-                int segmentIndex = args.getInt(OnNativeInvokeListener.ARG_SEGMENT_INDEX, -1);
-                if (segmentIndex < 0)
-                    throw new InvalidParameterException("onNativeInvoke(invalid segment index)");
-
-                String newUrl = onControlMessageListener.onControlResolveSegmentUrl(segmentIndex);
-                if (newUrl == null)
-                    throw new RuntimeException(new IOException("onNativeInvoke() = <NULL newUrl>"));
-
-                args.putString(OnNativeInvokeListener.ARG_URL, newUrl);
-                return true;
-            }
-            default:
-                return false;
-        }
-    }
-
-    /*
-     * MediaCodec select
-     */
-
-    public interface OnMediaCodecSelectListener {
-        String onMediaCodecSelect(IMediaPlayer mp, String mimeType, int profile, int level);
-    }
-
-    private OnMediaCodecSelectListener mOnMediaCodecSelectListener;
-
-    public void setOnMediaCodecSelectListener(OnMediaCodecSelectListener listener) {
-        mOnMediaCodecSelectListener = listener;
-    }
-
-    public void resetListeners() {
-        super.resetListeners();
-        mOnMediaCodecSelectListener = null;
-    }
-
-    @CalledByNative
-    private static String onSelectCodec(Object weakThiz, String mimeType, int profile, int level) {
-        if (weakThiz == null || !(weakThiz instanceof WeakReference<?>))
-            return null;
-
-        @SuppressWarnings("unchecked")
-        WeakReference<IjkMediaPlayer> weakPlayer = (WeakReference<IjkMediaPlayer>) weakThiz;
-        IjkMediaPlayer player = weakPlayer.get();
-        if (player == null)
-            return null;
-
-        OnMediaCodecSelectListener listener = player.mOnMediaCodecSelectListener;
-        if (listener == null)
-            listener = DefaultMediaCodecSelector.sInstance;
-
-        return listener.onMediaCodecSelect(player, mimeType, profile, level);
-    }
-
-    public static class DefaultMediaCodecSelector implements OnMediaCodecSelectListener {
-        public static final DefaultMediaCodecSelector sInstance = new DefaultMediaCodecSelector();
-
-        @SuppressWarnings("deprecation")
-        @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
-        public String onMediaCodecSelect(IMediaPlayer mp, String mimeType, int profile, int level) {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN)
-                return null;
-
-            if (TextUtils.isEmpty(mimeType))
-                return null;
-
-            Log.i(TAG, String.format(Locale.US, "onSelectCodec: mime=%s, profile=%d, level=%d", mimeType, profile, level));
-            ArrayList<IjkMediaCodecInfo> candidateCodecList = new ArrayList<IjkMediaCodecInfo>();
-            int numCodecs = MediaCodecList.getCodecCount();
-            for (int i = 0; i < numCodecs; i++) {
-                MediaCodecInfo codecInfo = MediaCodecList.getCodecInfoAt(i);
-                Log.d(TAG, String.format(Locale.US, "  found codec: %s", codecInfo.getName()));
-                if (codecInfo.isEncoder())
-                    continue;
-
-                String[] types = codecInfo.getSupportedTypes();
-                if (types == null)
-                    continue;
-
-                for (String type : types) {
-                    if (TextUtils.isEmpty(type))
-                        continue;
-
-                    Log.d(TAG, String.format(Locale.US, "    mime: %s", type));
-                    if (!type.equalsIgnoreCase(mimeType))
-                        continue;
-
-                    IjkMediaCodecInfo candidate = IjkMediaCodecInfo.setupCandidate(codecInfo, mimeType);
-                    if (candidate == null)
-                        continue;
-
-                    candidateCodecList.add(candidate);
-                    Log.i(TAG, String.format(Locale.US, "candidate codec: %s rank=%d", codecInfo.getName(), candidate.mRank));
-                    candidate.dumpProfileLevels(mimeType);
-                }
-            }
-
-            if (candidateCodecList.isEmpty()) {
-                return null;
-            }
-
-            IjkMediaCodecInfo bestCodec = candidateCodecList.get(0);
-
-            for (IjkMediaCodecInfo codec : candidateCodecList) {
-                if (codec.mRank > bestCodec.mRank) {
-                    bestCodec = codec;
-                }
-            }
-
-            if (bestCodec.mRank < IjkMediaCodecInfo.RANK_LAST_CHANCE) {
-                Log.w(TAG, String.format(Locale.US, "unaccetable codec: %s", bestCodec.mCodecInfo.getName()));
-                return null;
-            }
-
-            Log.i(TAG, String.format(Locale.US, "selected codec: %s rank=%d", bestCodec.mCodecInfo.getName(), bestCodec.mRank));
-            return bestCodec.mCodecInfo.getName();
-        }
-    }
-
-    private static volatile int dotPort = 0;
-    private static volatile boolean dotOpen = false;
-
-    public static void setDotPort(boolean open, int p) {
-        dotOpen = open;
-        dotPort = p;
-    }
-
-    public static void toggleDotPort(boolean open) {
-        dotOpen = open;
-        if (mIsNativeInitialized) {
-            native_setDot(dotOpen ? dotPort : 0);
-        }
-    }
-
-    public static native void native_profileBegin(String libName);
-
-    public static native void native_profileEnd();
-
-    public static native void native_setLogLevel(int level);
-
-    public static native void native_setReqLevel(int level);
-
-    public static native void native_setDot(int port);
 }

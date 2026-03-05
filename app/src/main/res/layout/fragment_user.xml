@@ -20,9 +20,9 @@
             android:orientation="horizontal">
 
             <LinearLayout
-                android:id="@+id/tvHistory"
+                android:id="@+id/tvRecentHot"
                 android:layout_width="wrap_content"
-                android:layout_height="@dimen/vs_100"
+                android:layout_height="@dimen/vs_80"
                 android:layout_gravity="center"
                 android:layout_margin="@dimen/vs_5"
                 android:background="@drawable/shape_user_focus"
@@ -30,94 +30,81 @@
                 android:clipToPadding="false"
                 android:focusable="true"
                 android:nextFocusLeft="@+id/tvSetting"
+                android:nextFocusRight="@+id/tvDouban"
                 android:orientation="horizontal"
-                android:paddingLeft="@dimen/vs_15"
-                android:paddingTop="@dimen/vs_15"
-                android:paddingRight="@dimen/vs_15"
-                android:paddingBottom="@dimen/vs_15">
-
-
-                <ImageView
-                    android:layout_width="@dimen/vs_50"
-                    android:layout_height="@dimen/vs_50"
-                    android:layout_gravity="center"
-                    android:alpha="0.75"
-                    android:src="@drawable/icon_history" />
+                android:paddingLeft="@dimen/vs_20"
+                android:paddingTop="@dimen/vs_10"
+                android:paddingRight="@dimen/vs_20"
+                android:paddingBottom="@dimen/vs_10">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center"
-                    android:layout_marginLeft="@dimen/vs_10"
                     android:focusable="false"
                     android:focusableInTouchMode="false"
                     android:gravity="center"
-                    android:text="历史"
+                    android:text="热播"
                     android:textAlignment="gravity"
                     android:textColor="@color/color_CCFFFFFF"
-                    android:textSize="@dimen/ts_40" />
+                    android:textSize="@dimen/ts_34" />
 
             </LinearLayout>
 
             <LinearLayout
-                android:id="@+id/tvLive"
+                android:id="@+id/tvDouban"
                 android:layout_width="wrap_content"
-                android:layout_height="@dimen/vs_100"
+                android:layout_height="@dimen/vs_80"
                 android:layout_gravity="center"
                 android:layout_margin="@dimen/vs_5"
                 android:background="@drawable/shape_user_focus"
                 android:clipChildren="false"
                 android:clipToPadding="false"
                 android:focusable="true"
+                android:nextFocusLeft="@+id/tvRecentHot"
+                android:nextFocusRight="@+id/tvSearch"
                 android:orientation="horizontal"
-                android:paddingLeft="@dimen/vs_15"
-                android:paddingTop="@dimen/vs_15"
-                android:paddingRight="@dimen/vs_15"
-                android:paddingBottom="@dimen/vs_15">
-
-
-                <ImageView
-                    android:layout_width="@dimen/vs_50"
-                    android:layout_height="@dimen/vs_50"
-                    android:layout_gravity="center"
-                    android:alpha="0.75"
-                    android:src="@drawable/icon_live" />
+                android:paddingLeft="@dimen/vs_24"
+                android:paddingTop="@dimen/vs_10"
+                android:paddingRight="@dimen/vs_24"
+                android:paddingBottom="@dimen/vs_10">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center"
-                    android:layout_marginLeft="@dimen/vs_10"
                     android:focusable="false"
                     android:focusableInTouchMode="false"
                     android:gravity="center"
-                    android:text="直播"
+                    android:text="TOP"
                     android:textAlignment="gravity"
                     android:textColor="@color/color_CCFFFFFF"
-                    android:textSize="@dimen/ts_40" />
+                    android:textSize="@dimen/ts_34" />
 
             </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/tvSearch"
                 android:layout_width="wrap_content"
-                android:layout_height="@dimen/vs_100"
+                android:layout_height="@dimen/vs_80"
                 android:layout_gravity="center"
                 android:layout_margin="@dimen/vs_5"
                 android:background="@drawable/shape_user_focus"
                 android:clipChildren="false"
                 android:clipToPadding="false"
                 android:focusable="true"
+                android:nextFocusLeft="@+id/tvDouban"
+                android:nextFocusRight="@+id/tvHistory"
                 android:orientation="horizontal"
                 android:paddingLeft="@dimen/vs_15"
-                android:paddingTop="@dimen/vs_15"
+                android:paddingTop="@dimen/vs_10"
                 android:paddingRight="@dimen/vs_15"
-                android:paddingBottom="@dimen/vs_15">
+                android:paddingBottom="@dimen/vs_10">
 
 
                 <ImageView
-                    android:layout_width="@dimen/vs_50"
-                    android:layout_height="@dimen/vs_50"
+                    android:layout_width="@dimen/vs_40"
+                    android:layout_height="@dimen/vs_40"
                     android:layout_gravity="center"
                     android:alpha="0.75"
                     android:src="@drawable/icon_search" />
@@ -133,31 +120,114 @@
                     android:text="搜索"
                     android:textAlignment="gravity"
                     android:textColor="@color/color_CCFFFFFF"
-                    android:textSize="@dimen/ts_40" />
+                    android:textSize="@dimen/ts_34" />
 
             </LinearLayout>
 
-
             <LinearLayout
-                android:id="@+id/tvPush"
+                android:id="@+id/tvHistory"
                 android:layout_width="wrap_content"
-                android:layout_height="@dimen/vs_100"
+                android:layout_height="@dimen/vs_80"
                 android:layout_gravity="center"
                 android:layout_margin="@dimen/vs_5"
                 android:background="@drawable/shape_user_focus"
                 android:clipChildren="false"
                 android:clipToPadding="false"
                 android:focusable="true"
+                android:nextFocusLeft="@+id/tvSearch"
+                android:nextFocusRight="@+id/tvLive"
                 android:orientation="horizontal"
                 android:paddingLeft="@dimen/vs_15"
-                android:paddingTop="@dimen/vs_15"
+                android:paddingTop="@dimen/vs_10"
                 android:paddingRight="@dimen/vs_15"
-                android:paddingBottom="@dimen/vs_15">
+                android:paddingBottom="@dimen/vs_10">
 
 
                 <ImageView
-                    android:layout_width="@dimen/vs_50"
-                    android:layout_height="@dimen/vs_50"
+                    android:layout_width="@dimen/vs_40"
+                    android:layout_height="@dimen/vs_40"
+                    android:layout_gravity="center"
+                    android:alpha="0.75"
+                    android:src="@drawable/icon_history" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginLeft="@dimen/vs_10"
+                    android:focusable="false"
+                    android:focusableInTouchMode="false"
+                    android:gravity="center"
+                    android:text="历史"
+                    android:textAlignment="gravity"
+                    android:textColor="@color/color_CCFFFFFF"
+                    android:textSize="@dimen/ts_34" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/tvLive"
+                android:layout_width="wrap_content"
+                android:layout_height="@dimen/vs_80"
+                android:layout_gravity="center"
+                android:layout_margin="@dimen/vs_5"
+                android:background="@drawable/shape_user_focus"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:focusable="true"
+                android:nextFocusLeft="@+id/tvHistory"
+                android:nextFocusRight="@+id/tvPush"
+                android:orientation="horizontal"
+                android:paddingLeft="@dimen/vs_15"
+                android:paddingTop="@dimen/vs_10"
+                android:paddingRight="@dimen/vs_15"
+                android:paddingBottom="@dimen/vs_10">
+
+
+                <ImageView
+                    android:layout_width="@dimen/vs_40"
+                    android:layout_height="@dimen/vs_40"
+                    android:layout_gravity="center"
+                    android:alpha="0.75"
+                    android:src="@drawable/icon_live" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginLeft="@dimen/vs_10"
+                    android:focusable="false"
+                    android:focusableInTouchMode="false"
+                    android:gravity="center"
+                    android:text="直播"
+                    android:textAlignment="gravity"
+                    android:textColor="@color/color_CCFFFFFF"
+                    android:textSize="@dimen/ts_34" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/tvPush"
+                android:layout_width="wrap_content"
+                android:layout_height="@dimen/vs_80"
+                android:layout_gravity="center"
+                android:layout_margin="@dimen/vs_5"
+                android:background="@drawable/shape_user_focus"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:focusable="true"
+                android:nextFocusLeft="@+id/tvLive"
+                android:nextFocusRight="@+id/tvFavorite"
+                android:orientation="horizontal"
+                android:paddingLeft="@dimen/vs_15"
+                android:paddingTop="@dimen/vs_10"
+                android:paddingRight="@dimen/vs_15"
+                android:paddingBottom="@dimen/vs_10">
+
+
+                <ImageView
+                    android:layout_width="@dimen/vs_40"
+                    android:layout_height="@dimen/vs_40"
                     android:layout_gravity="center"
                     android:alpha="0.75"
                     android:src="@drawable/icon_push" />
@@ -173,30 +243,32 @@
                     android:text="推送"
                     android:textAlignment="gravity"
                     android:textColor="@color/color_CCFFFFFF"
-                    android:textSize="@dimen/ts_40" />
+                    android:textSize="@dimen/ts_34" />
 
             </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/tvFavorite"
                 android:layout_width="wrap_content"
-                android:layout_height="@dimen/vs_100"
+                android:layout_height="@dimen/vs_80"
                 android:layout_gravity="center"
                 android:layout_margin="@dimen/vs_5"
                 android:background="@drawable/shape_user_focus"
                 android:clipChildren="false"
                 android:clipToPadding="false"
                 android:focusable="true"
+                android:nextFocusLeft="@+id/tvPush"
+                android:nextFocusRight="@+id/tvSetting"
                 android:orientation="horizontal"
                 android:paddingLeft="@dimen/vs_15"
-                android:paddingTop="@dimen/vs_15"
+                android:paddingTop="@dimen/vs_10"
                 android:paddingRight="@dimen/vs_15"
-                android:paddingBottom="@dimen/vs_15">
+                android:paddingBottom="@dimen/vs_10">
 
 
                 <ImageView
-                    android:layout_width="@dimen/vs_50"
-                    android:layout_height="@dimen/vs_50"
+                    android:layout_width="@dimen/vs_40"
+                    android:layout_height="@dimen/vs_40"
                     android:layout_gravity="center"
                     android:alpha="0.75"
                     android:src="@drawable/icon_collect" />
@@ -212,7 +284,7 @@
                     android:text="收藏"
                     android:textAlignment="gravity"
                     android:textColor="@color/color_CCFFFFFF"
-                    android:textSize="@dimen/ts_40" />
+                    android:textSize="@dimen/ts_34" />
 
             </LinearLayout>
 
@@ -220,24 +292,25 @@
             <LinearLayout
                 android:id="@+id/tvSetting"
                 android:layout_width="wrap_content"
-                android:layout_height="@dimen/vs_100"
+                android:layout_height="@dimen/vs_80"
                 android:layout_gravity="center"
                 android:layout_margin="@dimen/vs_5"
                 android:background="@drawable/shape_user_focus"
                 android:clipChildren="false"
                 android:clipToPadding="false"
                 android:focusable="true"
-                android:nextFocusRight="@+id/tvHistory"
+                android:nextFocusLeft="@+id/tvFavorite"
+                android:nextFocusRight="@+id/tvRecentHot"
                 android:orientation="horizontal"
                 android:paddingLeft="@dimen/vs_15"
-                android:paddingTop="@dimen/vs_15"
+                android:paddingTop="@dimen/vs_10"
                 android:paddingRight="@dimen/vs_15"
-                android:paddingBottom="@dimen/vs_15">
+                android:paddingBottom="@dimen/vs_10">
 
 
                 <ImageView
-                    android:layout_width="@dimen/vs_50"
-                    android:layout_height="@dimen/vs_50"
+                    android:layout_width="@dimen/vs_40"
+                    android:layout_height="@dimen/vs_40"
                     android:layout_gravity="center"
                     android:alpha="0.75"
                     android:src="@drawable/icon_setting" />
@@ -253,7 +326,7 @@
                     android:text="设置"
                     android:textAlignment="gravity"
                     android:textColor="@color/color_CCFFFFFF"
-                    android:textSize="@dimen/ts_40" />
+                    android:textSize="@dimen/ts_34" />
 
             </LinearLayout>
 

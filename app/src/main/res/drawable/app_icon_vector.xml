@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 背景：深色渐变基底 -->
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:centerX="54"
+                android:centerY="54"
+                android:gradientRadius="70"
+                android:type="radial">
+                <item android:color="#FF1A1A2E" android:offset="0" />
+                <item android:color="#FF0F3460" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 核心外框：发光的立方体线条 (GUI 概念) -->
+    <path
+        android:pathData="M54,25 L85,40 L85,75 L54,90 L23,75 L23,40 Z"
+        android:strokeWidth="2"
+        android:strokeColor="#4ECCA3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 立方体内部结构线 -->
+    <path
+        android:pathData="M54,25 L54,55 M54,55 L85,40 M54,55 L23,40 M54,55 L54,90"
+        android:strokeWidth="1.5"
+        android:strokeColor="#4ECCA3"
+        android:alpha="0.6" />
+
+    <!-- 中心播放按钮：极光渐变 -->
+    <path
+        android:pathData="M45,45 L68,55 L45,65 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="45"
+                android:startY="45"
+                android:endX="68"
+                android:endY="65"
+                android:type="linear">
+                <item android:color="#FF00D2FF" android:offset="0" />
+                <item android:color="#FF3A7BD5" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 顶部独特的 "GUI" 装饰性文字效果 (点阵风格) -->
+    <path
+        android:fillColor="#E94560"
+        android:pathData="M75,20h3v3h-3z M80,20h3v3h-3z M85,20h3v3h-3z" />
+
+    <!-- 底部律动波形 (代表流媒体) -->
+    <path
+        android:pathData="M30,82 Q40,75 54,82 T78,82"
+        android:strokeWidth="1"
+        android:strokeColor="#FFFFFF"
+        android:alpha="0.3" />
+
+</vector>

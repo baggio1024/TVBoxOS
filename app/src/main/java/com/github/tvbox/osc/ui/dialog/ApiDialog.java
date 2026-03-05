@@ -149,6 +149,26 @@ public class ApiDialog extends BaseDialog {
                 }
             }
         });
+        
+        // 新增：一键配置功能
+        findViewById(R.id.llQuickConfig).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String quickUrl = "https://tv.cngui.eu.org/api/tvbox/subscribe?token=mytoken&adFilter=true";
+                inputApi.setText(quickUrl);
+                inputApiLive.setText(quickUrl);
+                HistoryHelper.setApiHistory(quickUrl);
+                HistoryHelper.setLiveApiHistory(quickUrl);
+                Hawk.put(HawkConfig.API_URL, quickUrl);
+                Hawk.put(HawkConfig.LIVE_API_URL, quickUrl);
+                if (listener != null) {
+                    listener.onchange(quickUrl);
+                }
+                Toast.makeText(getContext(), "点播配置地址已设为默认", Toast.LENGTH_SHORT).show();
+                dismiss();
+            }
+        });
+
         inputApi.setOnEditorActionListener(new TextView.OnEditorActionListener() {
             @Override
             public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {

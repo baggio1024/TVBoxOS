@@ -28,6 +28,7 @@ import androidx.recyclerview.widget.LinearSmoothScroller;
 
 import com.chad.library.adapter.base.BaseQuickAdapter;
 import com.chad.library.adapter.base.BaseViewHolder;
+import com.github.catvod.crawler.JsLoader;
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.api.ApiConfig;
 import com.github.tvbox.osc.base.App;
@@ -143,7 +144,13 @@ public class DetailActivity extends BaseActivity {
 
     @Override
     protected void init() {
-        EventBus.getDefault().register(this);
+        if (!EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().register(this);
+        }
+        // Purge leftover search requests to ensure a clean detail load
+        OkGo.getInstance().cancelTag("search");
+        OkGo.getInstance().cancelTag("quick_search");
+        
         initView();
         initViewModel();
         initData();
@@ -433,7 +440,7 @@ public class DetailActivity extends BaseActivity {
                     seriesAdapter.getData().get(vodInfo.playIndex).selected = true;
                     seriesAdapter.notifyItemChanged(vodInfo.playIndex);
                     //选集全屏 想选集不全屏的注释下面一行
-                    if (showPreview && !fullWindows && !isAllowFull && playFragment.getPlayer().isPlaying())toggleFullPreview();
+                    if (showPreview && !fullWindows && !isAllowFull && playFragment.getPlayer() != null && playFragment.getPlayer().isPlaying())toggleFullPreview();
                     if (!showPreview || reload) {
                         jumpToPlay();
                         firstReverse=false;
@@ -559,7 +566,7 @@ public class DetailActivity extends BaseActivity {
 //                    bundle.putSerializable("VodInfo", previewVodInfo);
                     App.getInstance().setVodInfo(previewVodInfo);
                 }
-                playFragment.setData(bundle);
+                if (playFragment != null) playFragment.setData(bundle);
             } else {
                 jumpActivity(PlayActivity.class, bundle);
             }
@@ -691,12 +698,18 @@ public class DetailActivity extends BaseActivity {
                     sourceKey = mVideo.sourceKey;
 
                     tvName.setText(mVideo.name);
-                    setTextShow(tvSite, "来源：", ApiConfig.get().getSource(firstsourceKey).getName());
+                    SourceBean sb = ApiConfig.get().getSource(firstsourceKey);
+                    if (sb != null) {
+                        setTextShow(tvSite, "来源：", sb.getName());
+                    }
                     setTextShow(tvYear, "年份：", mVideo.year == 0 ? "" : String.valueOf(mVideo.year));
                     setTextShow(tvArea, "地区：", mVideo.area);
                     setTextShow(tvLang, "语言：", mVideo.lang);
                     if (!firstsourceKey.equals(sourceKey)) {
-                    	setTextShow(tvType, "类型：", "[" + ApiConfig.get().getSource(sourceKey).getName() + "] 解析");
+                        SourceBean curSb = ApiConfig.get().getSource(sourceKey);
+                        if (curSb != null) {
+                            setTextShow(tvType, "类型：", "[" + curSb.getName() + "] 解析");
+                        }
                     } else {
                     	setTextShow(tvType, "类型：", mVideo.type);
                     }
@@ -824,21 +837,24 @@ public class DetailActivity extends BaseActivity {
             if (event.obj != null) {
                 if (event.obj instanceof Integer) {
                     int index = (int) event.obj;
-                    for (int j = 0; j < Objects.requireNonNull(vodInfo.seriesMap.get(vodInfo.playFlag)).size(); j++) {
-                        seriesAdapter.getData().get(j).selected = false;
-                        seriesAdapter.notifyItemChanged(j);
+                    if (vodInfo != null && vodInfo.seriesMap != null && vodInfo.seriesMap.containsKey(vodInfo.playFlag)) {
+                        for (int j = 0; j < Objects.requireNonNull(vodInfo.seriesMap.get(vodInfo.playFlag)).size(); j++) {
+                            seriesAdapter.getData().get(j).selected = false;
+                            seriesAdapter.notifyItemChanged(j);
+                        }
+                        seriesAdapter.getData().get(index).selected = true;
+                        seriesAdapter.notifyItemChanged(index);
+                        if(!isFirstLoad)mGridView.setSelection(index);
+                        vodInfo.playIndex = index;
+                        //保存历史
+                        insertVod(firstsourceKey, vodInfo);
                     }
-                    seriesAdapter.getData().get(index).selected = true;
-                    seriesAdapter.notifyItemChanged(index);
-                    if(!isFirstLoad)mGridView.setSelection(index);
-                    vodInfo.playIndex = index;
-                    //保存历史
-                    insertVod(firstsourceKey, vodInfo);
                     isFirstLoad = false;
                 } else if (event.obj instanceof JSONObject) {
-                    vodInfo.playerCfg = event.obj.toString();
-                    //保存历史
-                    insertVod(firstsourceKey, vodInfo);
+                    if (vodInfo != null) {
+                        vodInfo.playerCfg = event.obj.toString();
+                        insertVod(firstsourceKey, vodInfo);
+                    }
                 } else if (event.obj instanceof String) {
                     String url = event.obj.toString();
                     //设置更新播放地址
@@ -885,40 +901,9 @@ public class DetailActivity extends BaseActivity {
         hadQuickStart = true;
         OkGo.getInstance().cancelTag("quick_search");
         quickSearchWord.clear();
-        searchTitle = mVideo.name;
+        searchTitle = mVideo != null ? mVideo.name : "";
         quickSearchData.clear();
         quickSearchWord.addAll(SearchHelper.splitWords(searchTitle));
-        // 分词
-//        OkGo.<String>get("http://api.pullword.com/get.php?source=" + URLEncoder.encode(searchTitle) + "&param1=0&param2=0&json=1")
-//                .tag("fenci")
-//                .execute(new AbsCallback<String>() {
-//                    @Override
-//                    public String convertResponse(okhttp3.Response response) throws Throwable {
-//                        if (response.body() != null) {
-//                            return response.body().string();
-//                        } else {
-//                            throw new IllegalStateException("网络请求错误");
-//                        }
-//                    }
-//
-//                    @Override
-//                    public void onSuccess(Response<String> response) {
-//                        String json = response.body();
-//                        try {
-//                            for (JsonElement je : new Gson().fromJson(json, JsonArray.class)) {
-//                                quickSearchWord.add(je.getAsJsonObject().get("t").getAsString());
-//                            }
-//                        } catch (Throwable th) {
-//                            th.printStackTrace();
-//                        }
-//                        List<String> words = new ArrayList<>(new HashSet<>(quickSearchWord));
-//                        EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_QUICK_SEARCH_WORD, words));
-//                    }
-//
-//                    @Override
-//                    public void onError(Response<String> response) {super.onError(response);}
-//                });
-
         searchResult();
     }
 
@@ -1002,12 +987,13 @@ public class DetailActivity extends BaseActivity {
     @Override
     public void onBackPressed() {
         if (fullWindows) {
-            if (playFragment.onBackPressed())
+            if (playFragment != null && playFragment.onBackPressed())
                 return;
             toggleFullPreview();
-            List<VodInfo.VodSeries> list = vodInfo.seriesMap.get(vodInfo.playFlag);
-            assert list != null;
-            tvSeriesGroup.setVisibility(list.size()>1 ? View.VISIBLE : View.GONE);
+            if (vodInfo != null && vodInfo.seriesMap.get(vodInfo.playFlag) != null) {
+                List<VodInfo.VodSeries> list = vodInfo.seriesMap.get(vodInfo.playFlag);
+                tvSeriesGroup.setVisibility(list.size()>1 ? View.VISIBLE : View.GONE);
+            }
             mGridView.requestFocus();
             return;
         }

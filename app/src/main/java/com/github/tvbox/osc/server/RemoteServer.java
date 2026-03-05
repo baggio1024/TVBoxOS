@@ -198,7 +198,7 @@ public class RemoteServer extends NanoHTTPD {
                  else if (fileName.startsWith("/dash/")) {
                     String dashData = App.getInstance().getDashData();
                     try {
-                        String data = new String(Base64.decode(dashData, Base64.DEFAULT | Base64.NO_WRAP), "UTF-8");
+                        String data = new String(Base64.decode(dashData, Base64.DEFAULT | Base64.URL_SAFE | Base64.NO_WRAP), "UTF-8");
                         return NanoHTTPD.newFixedLengthResponse(
                                 Response.Status.OK,
                                 "application/dash+xml",
@@ -311,7 +311,8 @@ public class RemoteServer extends NanoHTTPD {
     }
 
     public String getServerAddress() {
-        String ipAddress = getLocalIPAddress(mContext);
+        Context context = mContext != null ? mContext : App.getInstance();
+        String ipAddress = getLocalIPAddress(context);
         return "http://" + ipAddress + ":" + RemoteServer.serverPort + "/";
     }
 
@@ -329,7 +330,10 @@ public class RemoteServer extends NanoHTTPD {
 
     @SuppressLint("DefaultLocale")
     public static String getLocalIPAddress(Context context) {
-        WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+        if (context == null) context = App.getInstance();
+        if (context == null) return "0.0.0.0";
+        
+        WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         int ipAddress = wifiManager.getConnectionInfo().getIpAddress();
         if (ipAddress == 0) {
             try {
@@ -337,7 +341,7 @@ public class RemoteServer extends NanoHTTPD {
                 while (enumerationNi.hasMoreElements()) {
                     NetworkInterface networkInterface = enumerationNi.nextElement();
                     String interfaceName = networkInterface.getDisplayName();
-                    if (interfaceName.equals("eth0") || interfaceName.equals("wlan0")) {
+                    if (interfaceName.equals("eth0") || interfaceName.equals("wlan0") || interfaceName.equals("en0")) {
                         Enumeration<InetAddress> enumIpAddr = networkInterface.getInetAddresses();
                         while (enumIpAddr.hasMoreElements()) {
                             InetAddress inetAddress = enumIpAddr.nextElement();

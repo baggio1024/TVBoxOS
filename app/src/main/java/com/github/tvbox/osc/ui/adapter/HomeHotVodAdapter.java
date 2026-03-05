@@ -30,9 +30,6 @@ public class HomeHotVodAdapter extends BaseQuickAdapter<Movie.Video, BaseViewHol
     private final ImgUtil.Style style;
     private String  tvRateValue;
 
-    /**
-     * style 数据结构：ratio 指定宽高比（宽 / 高），type 表示风格（例如 rect、list）
-     */
     public HomeHotVodAdapter(ImgUtil.Style style,String tvRate) {
         super(R.layout.item_user_hot_vod, new ArrayList<>());
         if(style!=null){
@@ -40,6 +37,10 @@ public class HomeHotVodAdapter extends BaseQuickAdapter<Movie.Video, BaseViewHol
         }
         this.style=style;
         this.tvRateValue=tvRate;
+    }
+
+    public void setTvRate(String tvRate) {
+        this.tvRateValue = tvRate;
     }
 
     @Override
@@ -52,15 +53,20 @@ public class HomeHotVodAdapter extends BaseQuickAdapter<Movie.Video, BaseViewHol
         }
 
         TextView tvRate = helper.getView(R.id.tvRate);
-        if (Hawk.get(HawkConfig.HOME_REC, 0) == 2){
+        int homeRec = Hawk.get(HawkConfig.HOME_REC, 0);
+        if (homeRec == 2){
             SourceBean bean =  ApiConfig.get().getSource(item.sourceKey);
             if(bean!=null){
-                tvRateValue=bean.getName();
+                tvRate.setText(bean.getName());
             }else {
-                tvRateValue="搜";
+                tvRate.setText("搜");
             }
+        } else if (homeRec == 3 && !TextUtils.isEmpty(item.tag)) {
+            // 豆瓣 Top500 模式下，左上角显示序号
+            tvRate.setText(item.tag);
+        } else {
+            tvRate.setText(tvRateValue);
         }
-        tvRate.setText(tvRateValue);
 
         TextView tvNote = helper.getView(R.id.tvNote);
         if (item.note == null || item.note.isEmpty()) {
@@ -79,11 +85,9 @@ public class HomeHotVodAdapter extends BaseQuickAdapter<Movie.Video, BaseViewHol
             newHeight = (int)(newWidth / style.ratio);
         }
 
-        //由于部分电视机使用glide报错
         if (!TextUtils.isEmpty(item.pic)) {
             item.pic=item.pic.trim();
             if(ImgUtil.isBase64Image(item.pic)){
-                // 如果是 Base64 图片，解码并设置
                 ivThumb.setImageBitmap(ImgUtil.decodeBase64ToBitmap(item.pic));
             }else {
                 Picasso.get()
@@ -100,19 +104,17 @@ public class HomeHotVodAdapter extends BaseQuickAdapter<Movie.Video, BaseViewHol
         } else {
             ivThumb.setImageDrawable(ImgUtil.createTextDrawable(item.name));
         }
-        applyStyleToImage(ivThumb);//动态设置宽高
+        applyStyleToImage(ivThumb);
     }
-    /**
-     * 根据传入的 style 动态设置 ImageView 的高度：高度 = 宽度 / ratio
-     */
+    
     private void applyStyleToImage(final ImageView ivThumb) {
         if(style!=null){
             ViewGroup container = (ViewGroup) ivThumb.getParent();
             int width = defaultWidth;
             int height = (int) (width / style.ratio);
             ViewGroup.LayoutParams containerParams = container.getLayoutParams();
-            containerParams.height = AutoSizeUtils.mm2px(mContext, height); // 高度
-            containerParams.width = AutoSizeUtils.mm2px(mContext, width); // 宽度
+            containerParams.height = AutoSizeUtils.mm2px(mContext, height);
+            containerParams.width = AutoSizeUtils.mm2px(mContext, width);
             container.setLayoutParams(containerParams);
         }
     }

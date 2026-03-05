@@ -118,11 +118,26 @@ public class ModelSettingFragment extends BaseLazyFragment {
         tvParseWebView.setText(Hawk.get(HawkConfig.PARSE_WEBVIEW, true) ? "系统自带" : "XWalkView");
         tvApi.setText(Hawk.get(HawkConfig.API_URL, ""));
 
-        tvDns.setText(OkGoHelper.dnsHttpsList.get(Hawk.get(HawkConfig.DOH_URL, 0)));
+        // Add safety checks for dns list
+        int dnsIdx = Hawk.get(HawkConfig.DOH_URL, 0);
+        if (OkGoHelper.dnsHttpsList != null && dnsIdx >= 0 && dnsIdx < OkGoHelper.dnsHttpsList.size()) {
+            tvDns.setText(OkGoHelper.dnsHttpsList.get(dnsIdx));
+        } else {
+            tvDns.setText("系统默认");
+        }
+
         tvHomeRec.setText(getHomeRecName(Hawk.get(HawkConfig.HOME_REC, 0)));
         tvHistoryNum.setText(HistoryHelper.getHistoryNumName(Hawk.get(HawkConfig.HISTORY_NUM, 0)));
         tvSearchView.setText(getSearchView(Hawk.get(HawkConfig.SEARCH_VIEW, 0)));
-        tvHomeApi.setText(ApiConfig.get().getHomeSourceBean().getName());
+        
+        // Add safety check for home source
+        SourceBean homeSource = ApiConfig.get().getHomeSourceBean();
+        if (homeSource != null && homeSource.getName() != null) {
+            tvHomeApi.setText(homeSource.getName());
+        } else {
+            tvHomeApi.setText("未设置");
+        }
+
         tvScale.setText(PlayerHelper.getScaleName(Hawk.get(HawkConfig.PLAY_SCALE, 0)));
         tvPlay.setText(PlayerHelper.getPlayerName(Hawk.get(HawkConfig.PLAY_TYPE, 0)));
         tvRender.setText(PlayerHelper.getRenderName(Hawk.get(HawkConfig.PLAY_RENDER, 0)));
@@ -259,7 +274,9 @@ public class ModelSettingFragment extends BaseLazyFragment {
                 dialog.setAdapter(new SelectDialogAdapter.SelectDialogInterface<String>() {
                     @Override
                     public void click(String value, int pos) {
-                        tvDns.setText(OkGoHelper.dnsHttpsList.get(pos));
+                        if (OkGoHelper.dnsHttpsList != null && pos < OkGoHelper.dnsHttpsList.size()) {
+                            tvDns.setText(OkGoHelper.dnsHttpsList.get(pos));
+                        }
                         Hawk.put(HawkConfig.DOH_URL, pos);
 //                        String url = OkGoHelper.getDohUrl(pos);
 //                        OkGoHelper.dnsOverHttps.setUrl(url.isEmpty() ? null : HttpUrl.get(url));
@@ -577,7 +594,8 @@ public class ModelSettingFragment extends BaseLazyFragment {
         SettingActivity.callback = new SettingActivity.DevModeCallback() {
             @Override
             public void onChange() {
-                findViewById(R.id.llDebug).setVisibility(View.VISIBLE);
+                View llDebug = findViewById(R.id.llDebug);
+                if (llDebug != null) llDebug.setVisibility(View.VISIBLE);
             }
         };
 

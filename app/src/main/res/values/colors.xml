@@ -39,6 +39,8 @@
     <color name="color_scrollview_bg">#44000000</color>
     <color name="color_text_primary">#FFFFFAE0</color>
 
-
-
+    <!-- Warm Theme Colors -->
+    <color name="primary_warm">#FF5722</color>
+    <color name="primary_dark_warm">#E64A19</color>
+    <color name="accent_warm">#FFC107</color>
 </resources>

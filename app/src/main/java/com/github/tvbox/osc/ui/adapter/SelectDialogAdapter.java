@@ -95,12 +95,17 @@ public class SelectDialogAdapter<T> extends ListAdapter<T, SelectDialogAdapter.S
         holder.itemView.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (position == select)
-                    return;
-                notifyItemChanged(select);
+                // Modified: Even if the item is already selected, trigger the click
+                // to allow home page refresh (especially for virtual sources like 'Douban')
+                int oldSelect = select;
                 select = position;
-                notifyItemChanged(select);
-                dialogInterface.click(value, position);
+                if (oldSelect != select) {
+                    notifyItemChanged(oldSelect);
+                    notifyItemChanged(select);
+                }
+                if (dialogInterface != null) {
+                    dialogInterface.click(value, position);
+                }
             }
         });
     }

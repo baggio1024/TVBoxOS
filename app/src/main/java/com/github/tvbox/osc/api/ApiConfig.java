@@ -35,6 +35,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.lzy.okgo.OkGo;
 import com.lzy.okgo.callback.AbsCallback;
 import com.lzy.okgo.model.Response;
@@ -432,40 +433,46 @@ public class ApiConfig {
         jarCache = DefaultConfig.safeJsonString(infoJson, "jarCache", "true");
         // wallpaper
         wallpaper = DefaultConfig.safeJsonString(infoJson, "wallpaper", "");
+        
+        // 关键点：加载新配置前彻底清空旧的站点列表
+        sourceBeanList.clear();
+        searchSourceBeanList.clear();
+
         // 远端站点源
         SourceBean firstSite = null;
-        for (JsonElement opt : infoJson.get("sites").getAsJsonArray()) {
-            JsonObject obj = (JsonObject) opt;
-            SourceBean sb = new SourceBean();
-            String siteKey = obj.get("key").getAsString().trim();
-            sb.setKey(siteKey);
-            sb.setName(obj.has("name")?obj.get("name").getAsString().trim():siteKey);
-            sb.setType(obj.get("type").getAsInt());
-            sb.setApi(obj.get("api").getAsString().trim());
-            sb.setSearchable(DefaultConfig.safeJsonInt(obj, "searchable", 1));
-            sb.setQuickSearch(DefaultConfig.safeJsonInt(obj, "quickSearch", 1));
-            if(siteKey.startsWith("py_")){
-                sb.setFilterable(1);
-            }else {
-                sb.setFilterable(DefaultConfig.safeJsonInt(obj, "filterable", 1));
+        if(infoJson.has("sites") && infoJson.get("sites").isJsonArray()) {
+            for (JsonElement opt : infoJson.get("sites").getAsJsonArray()) {
+                JsonObject obj = (JsonObject) opt;
+                SourceBean sb = new SourceBean();
+                String siteKey = obj.get("key").getAsString().trim();
+                sb.setKey(siteKey);
+                sb.setName(obj.has("name")?obj.get("name").getAsString().trim():siteKey);
+                sb.setType(obj.get("type").getAsInt());
+                sb.setApi(obj.get("api").getAsString().trim());
+                sb.setSearchable(DefaultConfig.safeJsonInt(obj, "searchable", 1));
+                sb.setQuickSearch(DefaultConfig.safeJsonInt(obj, "quickSearch", 1));
+                if(siteKey.startsWith("py_")){
+                    sb.setFilterable(1);
+                }else {
+                    sb.setFilterable(DefaultConfig.safeJsonInt(obj, "filterable", 1));
+                }
+                sb.setPlayerUrl(DefaultConfig.safeJsonString(obj, "playUrl", ""));
+                sb.setExt(DefaultConfig.safeJsonString(obj, "ext", ""));
+                sb.setJar(DefaultConfig.safeJsonString(obj, "jar", ""));
+                sb.setPlayerType(DefaultConfig.safeJsonInt(obj, "playerType", -1));
+                sb.setCategories(DefaultConfig.safeJsonStringList(obj, "categories"));
+                sb.setClickSelector(DefaultConfig.safeJsonString(obj, "click", ""));
+                sb.setStyle(DefaultConfig.safeJsonString(obj, "style", ""));
+                if (firstSite == null && sb.getFilterable()==1)
+                    firstSite = sb;
+                sourceBeanList.put(siteKey, sb);
             }
-            sb.setPlayerUrl(DefaultConfig.safeJsonString(obj, "playUrl", ""));
-            sb.setExt(DefaultConfig.safeJsonString(obj, "ext", ""));
-            sb.setJar(DefaultConfig.safeJsonString(obj, "jar", ""));
-            sb.setPlayerType(DefaultConfig.safeJsonInt(obj, "playerType", -1));
-            sb.setCategories(DefaultConfig.safeJsonStringList(obj, "categories"));
-            sb.setClickSelector(DefaultConfig.safeJsonString(obj, "click", ""));
-            sb.setStyle(DefaultConfig.safeJsonString(obj, "style", ""));
-            if (firstSite == null && sb.getFilterable()==1)
-                firstSite = sb;
-            sourceBeanList.put(siteKey, sb);
         }
         if (sourceBeanList != null && sourceBeanList.size() > 0) {
             String home = Hawk.get(HawkConfig.HOME_API, "");
             SourceBean sh = getSource(home);
             if (sh == null) {
-                assert firstSite != null;
-                setSourceBean(firstSite);
+                if (firstSite != null) setSourceBean(firstSite);
             }
             else
                 setSourceBean(sh);
@@ -505,30 +512,36 @@ public class ApiConfig {
         if(live_api_url.isEmpty() || apiUrl.equals(live_api_url)){
             LOG.i("echo-load-config_live");
             initLiveSettings();
-            if(infoJson.has("lives")){
+            if(infoJson.has("lives") && infoJson.get("lives").isJsonArray()){
                 JsonArray lives_groups=infoJson.get("lives").getAsJsonArray();
-                int live_group_index=Hawk.get(HawkConfig.LIVE_GROUP_INDEX,0);
-                if(live_group_index>lives_groups.size()-1)Hawk.put(HawkConfig.LIVE_GROUP_INDEX,0);
-                Hawk.put(HawkConfig.LIVE_GROUP_LIST,lives_groups);
-                //加载多源配置
-                try {
-                    ArrayList<LiveSettingItem> liveSettingItemList = new ArrayList<>();
-                    for (int i=0; i< lives_groups.size();i++) {
-                        JsonObject jsonObject = lives_groups.get(i).getAsJsonObject();
-                        String name = jsonObject.has("name")?jsonObject.get("name").getAsString():"线路"+(i+1);
-                        LiveSettingItem liveSettingItem = new LiveSettingItem();
-                        liveSettingItem.setItemIndex(i);
-                        liveSettingItem.setItemName(name);
-                        liveSettingItemList.add(liveSettingItem);
+                if (lives_groups.size() > 0) {
+                    int live_group_index=Hawk.get(HawkConfig.LIVE_GROUP_INDEX,0);
+                    if(live_group_index>lives_groups.size()-1) {
+                        live_group_index = 0;
+                        Hawk.put(HawkConfig.LIVE_GROUP_INDEX,0);
                     }
-                    liveSettingGroupList.get(5).setLiveSettingItems(liveSettingItemList);
-                } catch (Exception e) {
-                    // 捕获任何可能发生的异常
-                    e.printStackTrace();
-                }
+                    Hawk.put(HawkConfig.LIVE_GROUP_LIST,lives_groups);
+                    //加载多源配置
+                    try {
+                        ArrayList<LiveSettingItem> liveSettingItemList = new ArrayList<>();
+                        for (int i=0; i< lives_groups.size();i++) {
+                            JsonObject jsonObject = lives_groups.get(i).getAsJsonObject();
+                            String name = jsonObject.has("name")?jsonObject.get("name").getAsString():"线路"+(i+1);
+                            LiveSettingItem liveSettingItem = new LiveSettingItem();
+                            liveSettingItem.setItemIndex(i);
+                            liveSettingItem.setItemName(name);
+                            liveSettingItemList.add(liveSettingItem);
+                        }
+                        if (liveSettingGroupList.size() > 5) {
+                            liveSettingGroupList.get(5).setLiveSettingItems(liveSettingItemList);
+                        }
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
 
-                JsonObject livesOBJ = lives_groups.get(live_group_index).getAsJsonObject();
-                loadLiveApi(livesOBJ);
+                    JsonObject livesOBJ = lives_groups.get(live_group_index).getAsJsonObject();
+                    loadLiveApi(livesOBJ);
+                }
             }
         }
 
@@ -692,31 +705,37 @@ public class ApiConfig {
         liveSpider = DefaultConfig.safeJsonString(infoJson, "spider", "");
         // 直播源
         initLiveSettings();
-        if(infoJson.has("lives")){
+        if(infoJson.has("lives") && infoJson.get("lives").isJsonArray()){
             JsonArray lives_groups=infoJson.get("lives").getAsJsonArray();
-
-            int live_group_index=Hawk.get(HawkConfig.LIVE_GROUP_INDEX,0);
-            if(live_group_index>lives_groups.size()-1)Hawk.put(HawkConfig.LIVE_GROUP_INDEX,0);
-            Hawk.put(HawkConfig.LIVE_GROUP_LIST,lives_groups);
-            //加载多源配置
-            try {
-                ArrayList<LiveSettingItem> liveSettingItemList = new ArrayList<>();
-                for (int i=0; i< lives_groups.size();i++) {
-                    JsonObject jsonObject = lives_groups.get(i).getAsJsonObject();
-                    String name = jsonObject.has("name")?jsonObject.get("name").getAsString():"线路"+(i+1);
-                    LiveSettingItem liveSettingItem = new LiveSettingItem();
-                    liveSettingItem.setItemIndex(i);
-                    liveSettingItem.setItemName(name);
-                    liveSettingItemList.add(liveSettingItem);
+            if (lives_groups.size() > 0) {
+                int live_group_index=Hawk.get(HawkConfig.LIVE_GROUP_INDEX,0);
+                if(live_group_index>lives_groups.size()-1) {
+                    live_group_index = 0;
+                    Hawk.put(HawkConfig.LIVE_GROUP_INDEX,0);
                 }
-                liveSettingGroupList.get(5).setLiveSettingItems(liveSettingItemList);
-            } catch (Exception e) {
-                // 捕获任何可能发生的异常
-                e.printStackTrace();
-            }
+                Hawk.put(HawkConfig.LIVE_GROUP_LIST,lives_groups);
+                //加载多源配置
+                try {
+                    ArrayList<LiveSettingItem> liveSettingItemList = new ArrayList<>();
+                    for (int i=0; i< lives_groups.size();i++) {
+                        JsonObject jsonObject = lives_groups.get(i).getAsJsonObject();
+                        String name = jsonObject.has("name")?jsonObject.get("name").getAsString():"线路"+(i+1);
+                        LiveSettingItem liveSettingItem = new LiveSettingItem();
+                        liveSettingItem.setItemIndex(i);
+                        liveSettingItem.setItemName(name);
+                        liveSettingItemList.add(liveSettingItem);
+                    }
+                    if (liveSettingGroupList.size() > 5) {
+                        liveSettingGroupList.get(5).setLiveSettingItems(liveSettingItemList);
+                    }
+                } catch (Exception e) {
+                    // 捕获任何可能发生的异常
+                    e.printStackTrace();
+                }
 
-            JsonObject livesOBJ = lives_groups.get(live_group_index).getAsJsonObject();
-            loadLiveApi(livesOBJ);
+                JsonObject livesOBJ = lives_groups.get(live_group_index).getAsJsonObject();
+                loadLiveApi(livesOBJ);
+            }
         }
 
         myHosts = new HashMap<>();
@@ -980,9 +999,9 @@ public class ApiConfig {
     }
 
     public SourceBean getSource(String key) {
-        if (!sourceBeanList.containsKey(key))
-            return null;
-        return sourceBeanList.get(key);
+        if (sourceBeanList.containsKey(key))
+            return sourceBeanList.get(key);
+        return null;
     }
 
     public void setSourceBean(SourceBean sourceBean) {
@@ -1055,6 +1074,7 @@ public class ApiConfig {
     }
 
     public IJKCode getIJKCodec(String name) {
+        if (ijkCodes == null || ijkCodes.isEmpty()) return null;
         for (IJKCode code : ijkCodes) {
             if (code.getName().equals(name))
                 return code;

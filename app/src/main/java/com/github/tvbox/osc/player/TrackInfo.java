@@ -4,12 +4,22 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class TrackInfo {
+    private List<TrackInfoBean> video;
     private List<TrackInfoBean> audio;
     private List<TrackInfoBean> subtitle;
 
     public TrackInfo() {
+        video = new ArrayList<>();
         audio = new ArrayList<>();
         subtitle = new ArrayList<>();
+    }
+
+    public List<TrackInfoBean> getVideo() {
+        return video;
+    }
+
+    public void addVideo(TrackInfoBean video) {
+        this.video.add(video);
     }
 
     public List<TrackInfoBean> getAudio() {

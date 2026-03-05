@@ -28,35 +28,61 @@ public class DefaultConfig {
 
     public static List<MovieSort.SortData> adjustSort(String sourceKey, List<MovieSort.SortData> list, boolean withMy) {
         List<MovieSort.SortData> data = new ArrayList<>();
-        if (sourceKey != null) {
-            SourceBean sb = ApiConfig.get().getSource(sourceKey);
-            ArrayList<String> categories = sb.getCategories();
-            if (!categories.isEmpty()) {
-                for (String cate : categories) {
+        try {
+            if (sourceKey != null) {
+                SourceBean sb = ApiConfig.get().getSource(sourceKey);
+                if (sb != null) {
+                    ArrayList<String> categories = sb.getCategories();
+                    if (categories != null && !categories.isEmpty()) {
+                        for (String cate : categories) {
+                            if (list != null) {
+                                for (MovieSort.SortData sortData : list) {
+                                    if (sortData != null && sortData.name != null && sortData.name.equals(cate)) {
+                                        if (sortData.filters == null)
+                                            sortData.filters = new ArrayList<>();
+                                        data.add(sortData);
+                                    }
+                                }
+                            }
+                        }
+                    } else if (list != null) {
+                        for (MovieSort.SortData sortData : list) {
+                            if (sortData != null) {
+                                if (sortData.filters == null)
+                                    sortData.filters = new ArrayList<>();
+                                data.add(sortData);
+                            }
+                        }
+                    }
+                } else if (list != null) {
                     for (MovieSort.SortData sortData : list) {
-                        if (sortData.name.equals(cate)) {
+                        if (sortData != null) {
                             if (sortData.filters == null)
                                 sortData.filters = new ArrayList<>();
                             data.add(sortData);
                         }
                     }
                 }
-            } else {
-                for (MovieSort.SortData sortData : list) {
-                    if (sortData.filters == null)
-                        sortData.filters = new ArrayList<>();
-                    data.add(sortData);
-                }
             }
+        } catch (Throwable th) {
+            th.printStackTrace();
         }
-        if (withMy)
-            data.add(0, new MovieSort.SortData("my0", "主页"));
-        Collections.sort(data);
+        
+        if (withMy) {
+            MovieSort.SortData my = new MovieSort.SortData("my0", "主页");
+            my.sort = -200;
+            data.add(0, my);
+        }
+        
+        try {
+            Collections.sort(data);
+        } catch (Throwable ignored) {}
+        
         return data;
     }
 
     public static int getAppVersionCode(Context mContext) {
-        //包管理操作管理类
+        if (mContext == null) return -1;
         PackageManager pm = mContext.getPackageManager();
         try {
             PackageInfo packageInfo = pm.getPackageInfo(mContext.getPackageName(), 0);
@@ -68,7 +94,7 @@ public class DefaultConfig {
     }
 
     public static String getAppVersionName(Context mContext) {
-        //包管理操作管理类
+        if (mContext == null) return "";
         PackageManager pm = mContext.getPackageManager();
         try {
             PackageInfo packageInfo = pm.getPackageInfo(mContext.getPackageName(), 0);
@@ -124,19 +150,22 @@ public class DefaultConfig {
             "http((?!http).)*?netease\\.com/file/.*"
     );
     public static boolean isVideoFormat(String url) {
-        Uri uri = Uri.parse(url);
-        String path = uri.getPath();
-        if (TextUtils.isEmpty(path)) {
-            return false;
-        }
-        if (snifferMatch.matcher(url).find()) return true;
+        if (TextUtils.isEmpty(url)) return false;
+        try {
+            Uri uri = Uri.parse(url);
+            String path = uri.getPath();
+            if (TextUtils.isEmpty(path)) {
+                return false;
+            }
+            if (snifferMatch.matcher(url).find()) return true;
+        } catch (Throwable ignored) {}
         return false;
     }
 
 
     public static String safeJsonString(JsonObject obj, String key, String defaultVal) {
         try {
-            if (obj.has(key)){
+            if (obj != null && obj.has(key)){
                 return obj.get(key).isJsonObject() || obj.get(key).isJsonArray()?obj.get(key).toString().trim():obj.getAsJsonPrimitive(key).getAsString().trim();
             }
             else
@@ -148,7 +177,7 @@ public class DefaultConfig {
 
     public static int safeJsonInt(JsonObject obj, String key, int defaultVal) {
         try {
-            if (obj.has(key))
+            if (obj != null && obj.has(key))
                 return obj.getAsJsonPrimitive(key).getAsInt();
             else
                 return defaultVal;
@@ -160,7 +189,7 @@ public class DefaultConfig {
     public static ArrayList<String> safeJsonStringList(JsonObject obj, String key) {
         ArrayList<String> result = new ArrayList<>();
         try {
-            if (obj.has(key)) {
+            if (obj != null && obj.has(key)) {
                 if (obj.get(key).isJsonObject()) {
                     result.add(obj.get(key).getAsString());
                 } else {
@@ -175,7 +204,7 @@ public class DefaultConfig {
     }
 
     public static String checkReplaceProxy(String urlOri) {
-        if (urlOri.startsWith("proxy://"))
+        if (urlOri != null && urlOri.startsWith("proxy://"))
             return urlOri.replace("proxy://", ControlManager.get().getAddress(true) + "proxy?");
         return urlOri;
     }

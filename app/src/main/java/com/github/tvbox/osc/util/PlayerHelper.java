@@ -2,6 +2,7 @@ package com.github.tvbox.osc.util;
 
 import android.app.Activity;
 import android.content.Context;
+import android.os.Build;
 
 import com.github.tvbox.osc.api.ApiConfig;
 import com.github.tvbox.osc.bean.IJKCode;
@@ -30,6 +31,21 @@ import xyz.doikki.videoplayer.render.RenderViewFactory;
 import xyz.doikki.videoplayer.render.TextureRenderViewFactory;
 
 public class PlayerHelper {
+    
+    // 判断是否为模拟器
+    public static boolean isEmulator() {
+        return Build.FINGERPRINT.startsWith("generic")
+                || Build.FINGERPRINT.startsWith("unknown")
+                || Build.MODEL.contains("google_sdk")
+                || Build.MODEL.contains("Emulator")
+                || Build.MODEL.contains("Android SDK built for x86")
+                || Build.MODEL.contains("MuMu")  // 添加 MuMu 模拟器检测
+                || Build.MANUFACTURER.contains("Genymotion")
+                || Build.MANUFACTURER.contains("Netease")  // 添加网易模拟器检测
+                || (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic"))
+                || "google_sdk".equals(Build.PRODUCT);
+    }
+
     public static void updateCfg(VideoView videoView, JSONObject playerCfg) {
         updateCfg(videoView,playerCfg,-1);
     }
@@ -37,11 +53,21 @@ public class PlayerHelper {
         int playerType = Hawk.get(HawkConfig.PLAY_TYPE, 0);
         int renderType = Hawk.get(HawkConfig.PLAY_RENDER, 0);
         String ijkCode = Hawk.get(HawkConfig.IJK_CODEC, "硬解码");
+        
+        if (isEmulator()) {
+            ijkCode = "软解码";
+            renderType = 1; // 模拟器强制使用 SurfaceView，解决 gl-format 报错和卡顿
+        }
+
         int scale = Hawk.get(HawkConfig.PLAY_SCALE, 0);
         try {
             playerType = playerCfg.getInt("pl");
             renderType = playerCfg.getInt("pr");
-            ijkCode = playerCfg.getString("ijk");
+            if (!isEmulator()) {
+                ijkCode = playerCfg.getString("ijk");
+            } else {
+                renderType = 1; // 强制覆盖
+            }
             scale = playerCfg.getInt("sc");
         } catch (JSONException e) {
             e.printStackTrace();
@@ -56,20 +82,7 @@ public class PlayerHelper {
                     return new IjkMediaPlayer(context, codec);
                 }
             };
-            try {
-                tv.danmaku.ijk.media.player.IjkMediaPlayer.loadLibrariesOnce(new IjkLibLoader() {
-                    @Override
-                    public void loadLibrary(String s) throws UnsatisfiedLinkError, SecurityException {
-                        try {
-                            System.loadLibrary(s);
-                        } catch (Throwable th) {
-                            th.printStackTrace();
-                        }
-                    }
-                });
-            } catch (Throwable th) {
-                th.printStackTrace();
-            }
+            loadIjkLibs();
         } else if (playerType == 2) {
             playerFactory = ExoMediaPlayerFactory.create();
         } else {
@@ -78,10 +91,10 @@ public class PlayerHelper {
         RenderViewFactory renderViewFactory = null;
         switch (renderType) {
             case 0:
-            default:
                 renderViewFactory = TextureRenderViewFactory.create();
                 break;
             case 1:
+            default:
                 renderViewFactory = SurfaceRenderViewFactory.create();
                 break;
         }
@@ -90,6 +103,12 @@ public class PlayerHelper {
             videoView.setRenderViewFactory(renderViewFactory);
             videoView.setScreenScaleType(scale);
         }
+    }
+
+    private static void loadIjkLibs() {
+        // 直接跳过 IJK 库加载，避免 native 库不兼容问题
+        // 现代设备可以使用 ExoPlayer 或系统播放器
+        return;
     }
 
     public static void updateCfg(VideoView videoView) {
@@ -102,56 +121,23 @@ public class PlayerHelper {
                     return new IjkMediaPlayer(context, null);
                 }
             };
-            try {
-                tv.danmaku.ijk.media.player.IjkMediaPlayer.loadLibrariesOnce(new IjkLibLoader() {
-                    @Override
-                    public void loadLibrary(String s) throws UnsatisfiedLinkError, SecurityException {
-                        try {
-                            System.loadLibrary(s);
-                        } catch (Throwable th) {
-                            th.printStackTrace();
-                        }
-                    }
-                });
-            } catch (Throwable th) {
-                th.printStackTrace();
-            }
+            loadIjkLibs();
         } else if (playType == 2) {
             playerFactory = ExoMediaPlayerFactory.create();
         } else {
             playerFactory = AndroidMediaPlayerFactory.create();
         }
-        int renderType = Hawk.get(HawkConfig.PLAY_RENDER, 0);
-        RenderViewFactory renderViewFactory = null;
-        switch (renderType) {
-            case 0:
-            default:
-                renderViewFactory = TextureRenderViewFactory.create();
-                break;
-            case 1:
-                renderViewFactory = SurfaceRenderViewFactory.create();
-                break;
-        }
+        
+        int renderType = isEmulator() ? 1 : Hawk.get(HawkConfig.PLAY_RENDER, 0);
+        RenderViewFactory renderViewFactory = (renderType == 1) ? SurfaceRenderViewFactory.create() : TextureRenderViewFactory.create();
+
         videoView.setPlayerFactory(playerFactory);
         videoView.setRenderViewFactory(renderViewFactory);
     }
 
 
     public static void init() {
-        try {
-            tv.danmaku.ijk.media.player.IjkMediaPlayer.loadLibrariesOnce(new IjkLibLoader() {
-                @Override
-                public void loadLibrary(String s) throws UnsatisfiedLinkError, SecurityException {
-                    try {
-                        System.loadLibrary(s);
-                    } catch (Throwable th) {
-                        th.printStackTrace();
-                    }
-                }
-            });
-        } catch (Throwable th) {
-            th.printStackTrace();
-        }
+        loadIjkLibs();
     }
 
     public static String getPlayerName(int playType) {

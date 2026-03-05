@@ -175,7 +175,7 @@ public class SearchActivity extends BaseActivity {
                         if (searchExecutorService != null) {
                             pauseRunnable = searchExecutorService.shutdownNow();
                             searchExecutorService = null;
-                            JsLoader.stopAll();
+                            // JsLoader.stopAll();  // REMOVED: This was causing the detail page to fail by stopping the core engine
                         }
                     } catch (Throwable th) {
                         th.printStackTrace();
