@@ -1,15 +1,17 @@
 apply plugin: 'com.android.application'
 
 android {
+    namespace 'com.github.tvbox.osc'
     compileSdkVersion 33
 
     defaultConfig {
         applicationId 'com.github.tvbox.gui'
+        minSdkVersion 18
         targetSdkVersion 31
         versionCode 1
         versionName '1.0.0'
         multiDexEnabled true
-        //设置room的Schema的位置
+
         javaCompileOptions {
             annotationProcessorOptions {
                 arguments = ["room.schemaLocation": "$projectDir/schemas".toString()]
@@ -17,8 +19,8 @@ android {
         }
         
         ndk {
-            // 确保包含 x86 支持以解决您之前的警告
-            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+            // 强制只保留 32 位架构，解决 64 位模拟器找不到 libijkffmpeg.so 的问题
+            abiFilters 'armeabi-v7a', 'x86'
         }
     }
 
@@ -26,45 +28,29 @@ android {
         exclude 'META-INF/DEPENDENCIES'
     }
 
-    flavorDimensions "mode"
+    flavorDimensions "version"
     productFlavors {
         normal {
-            dimension "mode"
-            minSdkVersion 18
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            dimension "version"
         }
         python {
-            dimension "mode"
-            minSdkVersion 18
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro', 'proguard-python.pro'
+            dimension "version"
         }
     }
 
     buildTypes {
         debug {
             minifyEnabled false
-            ndk {
-                abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
-            }
         }
         release {
             minifyEnabled true
-            ndk {
-                abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
-            }
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 
-    splits {
-        abi {
-            enable false
-        }
-    }
-
-    applicationVariants.configureEach { variant ->
-        variant.outputs.configureEach { output ->
-            def flavorNames = variant.productFlavors.collect { it.name == "normal" ? "java" : it.name }.join('-')
-            def fileName = "TVBox_${variant.buildType.name}-${flavorNames}.apk"
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            def fileName = "TVBox_${variant.productFlavors[0].name}_${variant.buildType.name}.apk"
             outputFileName = fileName
         }
     }
@@ -81,7 +67,7 @@ android {
 }
 
 dependencies {
-    api fileTree(dir: "libs", include: ["*.jar","*.aar"])
+    implementation fileTree(dir: "libs", include: ["*.jar","*.aar"])
 
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
     implementation 'com.google.zxing:core:3.3.0'
@@ -89,7 +75,6 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.0.4'
     implementation 'androidx.lifecycle:lifecycle-extensions:2.2.0'
     implementation 'androidx.recyclerview:recyclerview:1.2.1'
-
 
     implementation 'com.squareup.okhttp3:okhttp:3.12.11'
     annotationProcessor 'androidx.room:room-compiler:2.3.0'
@@ -105,10 +90,7 @@ dependencies {
         exclude group: 'xmlpull', module: 'xmlpull'
     }
     implementation 'org.greenrobot:eventbus:3.2.0'
-    
-    // 修正 Hawk 依赖坐标
     implementation 'com.orhanobut:hawk:2.0.1'
-
     implementation 'com.lzy.net:okgo:3.0.4'
     implementation 'com.owen:tv-recyclerview:3.0.0'
     

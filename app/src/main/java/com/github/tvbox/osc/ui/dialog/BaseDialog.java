@@ -24,16 +24,23 @@ public class BaseDialog extends Dialog {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        CutoutUtil.adaptCutoutAboveAndroidP(this, true);//设置刘海
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            CutoutUtil.adaptCutoutAboveAndroidP(this, true);//设置刘海
+        }
         super.onCreate(savedInstanceState);
     }
 
     @Override
     public void show() {
-        getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        // 仅在 KitKat 及以上版本使用此 Flag 优化全屏切换，避免低版本系统焦点锁定
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        }
         super.show();
         hideSysBar();
-        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        }
     }
 
     private void hideSysBar() {

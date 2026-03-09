@@ -1,8 +1,6 @@
 package com.github.tvbox.osc.base;
 
 import android.app.Activity;
-import android.content.Context;
-import android.os.Build;
 import android.os.Process;
 import androidx.multidex.MultiDexApplication;
 
@@ -26,6 +24,8 @@ import com.github.catvod.crawler.JsLoader;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import me.jessyan.autosize.AutoSizeConfig;
 import me.jessyan.autosize.unit.Subunits;
@@ -33,16 +33,17 @@ import me.jessyan.autosize.unit.Subunits;
 /**
  * @author pj567
  * @date :2020/12/17
- * @description:
+ * @description: 优化启动序列与线程管理
  */
 public class App extends MultiDexApplication {
     private static App instance;
-
     private static P2PClass p;
     public static String burl;
     private static String dashData;
-
     private Thread.UncaughtExceptionHandler mDefaultHandler;
+
+    // 全局单线程池，用于处理应用初始化任务，避免创建大量零散线程
+    private static final ExecutorService initExecutor = Executors.newSingleThreadExecutor();
 
     @Override
     public void onCreate() {
@@ -50,155 +51,80 @@ public class App extends MultiDexApplication {
         instance = this;
         initCrashHandler();
         
-        // 同步初始化 Hawk (配置存储库)
+        // 1. 核心同步初始化 (必须在主线程第一时间完成)
         Hawk.init(this).build();
-        
-        // 同步初始化 OkGo 网络库，防止 Activity 启动时 client 为 null 导致崩溃
         try {
             OkGoHelper.init();
+            ControlManager.init(this);
+            // 强制主线程初始化播放器核心，防止播放时 So 库未就绪
+            PlayerHelper.init(); 
         } catch (Throwable th) {
-            LOG.e("OkGoHelper init error: " + th.getMessage());
+            LOG.e("Core init error: " + th.getMessage());
         }
 
-        ControlManager.init(this);
-        
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    initParams();
-                } catch (Throwable th) {
-                    LOG.e("initParams error: " + th.getMessage());
-                }
+        // 2. 异步初始化任务 (合并执行，减少线程切换开销)
+        initExecutor.execute(() -> {
+            try {
+                initParams();
+                EpgUtil.init();
+                ControlManager.get().startServer();
+                AppDataManager.init();
+                QuickJSLoader.init();
+                FileUtils.cleanPlayerCache();
+                
+                // UI 相关非阻塞组件
+                LoadSir.beginBuilder()
+                        .addCallback(new EmptyCallback())
+                        .addCallback(new LoadingCallback())
+                        .commit();
+                
+                AutoSizeConfig.getInstance().setCustomFragment(true).getUnitsManager()
+                        .setSupportDP(false)
+                        .setSupportSP(false)
+                        .setSupportSubunits(Subunits.MM);
+            } catch (Throwable th) {
+                LOG.e("Async init error: " + th.getMessage());
             }
-        }).start();
-        
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    EpgUtil.init();
-                } catch (Throwable th) {
-                    LOG.e("EpgUtil init error: " + th.getMessage());
-                }
-            }
-        }).start();
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    ControlManager.get().startServer();
-                } catch (Throwable th) {
-                    LOG.e("ControlManager startServer error: " + th.getMessage());
-                }
-            }
-        }).start();
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    AppDataManager.init();
-                } catch (Throwable th) {
-                    LOG.e("AppDataManager init error: " + th.getMessage());
-                }
-            }
-        }).start();
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    LoadSir.beginBuilder()
-                            .addCallback(new EmptyCallback())
-                            .addCallback(new LoadingCallback())
-                            .commit();
-                } catch (Throwable th) {
-                    LOG.e("LoadSir init error: " + th.getMessage());
-                }
-            }
-        }).start();
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    AutoSizeConfig.getInstance().setCustomFragment(true).getUnitsManager()
-                            .setSupportDP(false)
-                            .setSupportSP(false)
-                            .setSupportSubunits(Subunits.MM);
-                } catch (Throwable th) {
-                    LOG.e("AutoSizeConfig init error: " + th.getMessage());
-                }
-            }
-        }).start();
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    PlayerHelper.init();
-                } catch (Throwable th) {
-                    LOG.e("PlayerHelper init error: " + th.getMessage());
-                }
-            }
-        }).start();
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    QuickJSLoader.init();
-                } catch (Throwable th) {
-                    LOG.e("QuickJSLoader init error: " + th.getMessage());
-                }
-            }
-        }).start();
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    FileUtils.cleanPlayerCache();
-                } catch (Throwable th) {
-                    LOG.e("cleanPlayerCache error: " + th.getMessage());
-                }
-            }
-        }).start();
+        });
     }
 
     private void initCrashHandler() {
         mDefaultHandler = Thread.getDefaultUncaughtExceptionHandler();
-        Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
-            @Override
-            public void uncaughtException(Thread thread, Throwable ex) {
-                StringWriter sw = new StringWriter();
-                PrintWriter pw = new PrintWriter(sw);
-                ex.printStackTrace(pw);
-                String stackTrace = sw.toString();
-                LOG.e("UncaughtException: " + stackTrace);
-                android.util.Log.e("TVBox-Crash", stackTrace);
-                if (mDefaultHandler != null) {
-                    mDefaultHandler.uncaughtException(thread, ex);
-                } else {
-                    Process.killProcess(Process.myPid());
-                    System.exit(1);
-                }
+        Thread.setDefaultUncaughtExceptionHandler((thread, ex) -> {
+            StringWriter sw = new StringWriter();
+            PrintWriter pw = new PrintWriter(sw);
+            ex.printStackTrace(pw);
+            String stackTrace = sw.toString();
+            LOG.e("UncaughtException: " + stackTrace);
+            if (mDefaultHandler != null) {
+                mDefaultHandler.uncaughtException(thread, ex);
+            } else {
+                Process.killProcess(Process.myPid());
+                System.exit(1);
             }
         });
     }
 
     private void initParams() {
-        // Hawk 已经在同步代码块中初始化，这里补充逻辑
-        Hawk.put(HawkConfig.DEBUG_OPEN, false);
-        if (!Hawk.contains(HawkConfig.PLAY_TYPE)) {
-            Hawk.put(HawkConfig.PLAY_TYPE, 1);
-        }
+        // 设置默认值
+        if (!Hawk.contains(HawkConfig.DEBUG_OPEN)) Hawk.put(HawkConfig.DEBUG_OPEN, false);
         
-        // 设置默认配置
-        if (!Hawk.contains(HawkConfig.HOME_REC_STYLE)) {
-            Hawk.put(HawkConfig.HOME_REC_STYLE, true); // 首页多行默认开启
-        }
-        if (!Hawk.contains(HawkConfig.SEARCH_VIEW)) {
-            Hawk.put(HawkConfig.SEARCH_VIEW, 1); // 搜索展示默认 缩略图 (1)
-        }
-        if (!Hawk.contains(HawkConfig.FAST_SEARCH_MODE)) {
-            Hawk.put(HawkConfig.FAST_SEARCH_MODE, true); // 聚合搜索默认开启
-        }
+        // 播放器默认为 IJK (1)
+        if (!Hawk.contains(HawkConfig.PLAY_TYPE)) Hawk.put(HawkConfig.PLAY_TYPE, 1);
+        
+        // IJK 缓存默认开启 (true)
+        if (!Hawk.contains(HawkConfig.IJK_CACHE_PLAY)) Hawk.put(HawkConfig.IJK_CACHE_PLAY, true);
+        
+        // 聚合搜索默认关闭 (false)
+        if (!Hawk.contains(HawkConfig.FAST_SEARCH_MODE)) Hawk.put(HawkConfig.FAST_SEARCH_MODE, false);
+        
+        // 首页多行默认开启 (true)
+        if (!Hawk.contains(HawkConfig.HOME_REC_STYLE)) Hawk.put(HawkConfig.HOME_REC_STYLE, true);
+        
+        // 去广告默认开启 (true)
+        if (!Hawk.contains(HawkConfig.M3U8_PURIFY)) Hawk.put(HawkConfig.M3U8_PURIFY, true);
+
+        if (!Hawk.contains(HawkConfig.SEARCH_VIEW)) Hawk.put(HawkConfig.SEARCH_VIEW, 1);
     }
 
     public static App getInstance() {
@@ -209,22 +135,18 @@ public class App extends MultiDexApplication {
     public void onTerminate() {
         super.onTerminate();
         JsLoader.destroy();
+        if (!initExecutor.isShutdown()) {
+            initExecutor.shutdown();
+        }
     }
-
 
     private VodInfo vodInfo;
-    public void setVodInfo(VodInfo vodinfo){
-        this.vodInfo = vodinfo;
-    }
-    public VodInfo getVodInfo(){
-        return this.vodInfo;
-    }
+    public void setVodInfo(VodInfo vodinfo){ this.vodInfo = vodinfo; }
+    public VodInfo getVodInfo(){ return this.vodInfo; }
 
     public static P2PClass getp2p() {
         try {
-            if (p == null) {
-                p = new P2PClass(FileUtils.getExternalCachePath());
-            }
+            if (p == null) p = new P2PClass(FileUtils.getExternalCachePath());
             return p;
         } catch (Exception e) {
             LOG.e(e.toString());
@@ -232,14 +154,7 @@ public class App extends MultiDexApplication {
         }
     }
 
-    public Activity getCurrentActivity() {
-        return AppManager.getInstance().currentActivity();
-    }
-
-    public void setDashData(String data) {
-        dashData = data;
-    }
-    public String getDashData() {
-        return dashData;
-    }
+    public Activity getCurrentActivity() { return AppManager.getInstance().currentActivity(); }
+    public void setDashData(String data) { dashData = data; }
+    public String getDashData() { return dashData; }
 }

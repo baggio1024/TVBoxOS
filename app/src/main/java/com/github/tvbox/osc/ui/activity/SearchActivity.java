@@ -6,6 +6,7 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.WindowManager;
@@ -36,6 +37,7 @@ import com.github.tvbox.osc.ui.tv.widget.SearchKeyboard;
 import com.github.tvbox.osc.util.FastClickCheckUtil;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.HistoryHelper;
+import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.SearchHelper;
 import com.github.tvbox.osc.viewmodel.SourceViewModel;
 import com.google.gson.Gson;
@@ -86,6 +88,7 @@ public class SearchActivity extends BaseActivity {
     private SearchCheckboxDialog mSearchCheckboxDialog = null;
 
     private TextView wordsSwitch;
+    private long currentSearchResultSessionId = 0; 
 
     @Override
     protected int getLayoutResID() {
@@ -157,10 +160,8 @@ public class SearchActivity extends BaseActivity {
             }
         });
         mGridView.setHasFixedSize(true);
-        // lite
         if (Hawk.get(HawkConfig.SEARCH_VIEW, 0) == 0)
             mGridView.setLayoutManager(new V7LinearLayoutManager(this.mContext, 1, false));
-            // with preview
         else
             mGridView.setLayoutManager(new V7GridLayoutManager(this.mContext, 3));
         searchAdapter = new SearchAdapter();
@@ -171,20 +172,17 @@ public class SearchActivity extends BaseActivity {
                 FastClickCheckUtil.check(view);
                 Movie.Video video = searchAdapter.getData().get(position);
                 if (video != null) {
-                    try {
-                        if (searchExecutorService != null) {
-                            pauseRunnable = searchExecutorService.shutdownNow();
-                            searchExecutorService = null;
-                            // JsLoader.stopAll();  // REMOVED: This was causing the detail page to fail by stopping the core engine
-                        }
-                    } catch (Throwable th) {
-                        th.printStackTrace();
-                    }
+                    // 核心优化：在 Activity 跳转前，提前发起详情请求，实现“异步抢跑”
+                    SourceViewModel.spThreadPool.execute(() -> {
+                        sourceViewModel.getDetail(video.sourceKey, video.id);
+                    });
+                    
                     hasKeyBoard = false;
                     isSearchBack = true;
                     Bundle bundle = new Bundle();
                     bundle.putString("id", video.id);
                     bundle.putString("sourceKey", video.sourceKey);
+                    bundle.putString("picture", video.pic);
                     jumpActivity(DetailActivity.class, bundle);
                 }
             }
@@ -239,7 +237,6 @@ public class SearchActivity extends BaseActivity {
             }
         });
 
-        //软键盘
         etSearch.setOnEditorActionListener(new TextView.OnEditorActionListener() {
             @Override
             public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
@@ -263,7 +260,6 @@ public class SearchActivity extends BaseActivity {
             }
         });
 
-        // 监听遥控器
         etSearch.setOnKeyListener(new View.OnKeyListener() {
             @Override
             public boolean onKey(View v, int keyCode, KeyEvent event) {
@@ -338,9 +334,6 @@ public class SearchActivity extends BaseActivity {
         sourceViewModel = new ViewModelProvider(this).get(SourceViewModel.class);
     }
 
-    /**
-     * 拼音联想
-     */
     private void loadRec(String key) {
         OkGo.get("https://tv.aiseet.atianqi.com/i-tvbin/qtv_video/search/get_search_smart_box")
                 .params("format", "json")
@@ -403,10 +396,7 @@ public class SearchActivity extends BaseActivity {
             wordAdapter.setNewData(hots);
             return;
         }
-        // 加载热词
         OkGo.<String>get("https://node.video.qq.com/x/api/hot_search")
-//        OkGo.<String>get("https://api.web.360kan.com/v1/rank")
-//                .params("cat", "1")
                 .params("channdlId", "0")
                 .params("_", System.currentTimeMillis())
                 .execute(new AbsCallback<String>() {
@@ -415,7 +405,6 @@ public class SearchActivity extends BaseActivity {
                         try {
                             hots = new ArrayList<String>();
                             JsonArray itemList = JsonParser.parseString(response.body()).getAsJsonObject().get("data").getAsJsonObject().get("mapResult").getAsJsonObject().get("0").getAsJsonObject().get("listInfo").getAsJsonArray();
-//                            JsonArray itemList = JsonParser.parseString(response.body()).getAsJsonObject().get("data").getAsJsonArray();
                             for (JsonElement ele : itemList) {
                                 JsonObject obj = (JsonObject) ele;
                                 hots.add(obj.get("title").getAsString().trim().replaceAll("<|>|《|》|-", "").split(" ")[0]);
@@ -452,6 +441,9 @@ public class SearchActivity extends BaseActivity {
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void refresh(RefreshEvent event) {
         if (event.type == RefreshEvent.TYPE_SEARCH_RESULT) {
+            if (event.sessionId != currentSearchResultSessionId) {
+                return;
+            }
             try {
                 searchData(event.obj == null ? null : (AbsXml) event.obj);
             } catch (Exception e) {
@@ -469,17 +461,13 @@ public class SearchActivity extends BaseActivity {
     }
 
     private void search(String title) {
-        cancel();
         if (remoteDialog != null) {
             remoteDialog.dismiss();
             remoteDialog = null;
         }
         showLoading();
         etSearch.setText(title);
-
-        //写入历史记录
         HistoryHelper.setSearchHistory(title);
-
 
         this.searchTitle = title;
         mGridView.setVisibility(View.INVISIBLE);
@@ -491,11 +479,11 @@ public class SearchActivity extends BaseActivity {
     private AtomicInteger allRunCount = new AtomicInteger(0);
 
     private void searchResult() {
+        currentSearchResultSessionId = System.currentTimeMillis();
         try {
             if (searchExecutorService != null) {
                 searchExecutorService.shutdownNow();
                 searchExecutorService = null;
-                JsLoader.stopAll();
             }
         } catch (Throwable th) {
             th.printStackTrace();
@@ -503,74 +491,59 @@ public class SearchActivity extends BaseActivity {
             searchAdapter.setNewData(new ArrayList<>());
             allRunCount.set(0);
         }
+        
         searchExecutorService = Executors.newFixedThreadPool(5);
-        List<SourceBean> searchRequestList = new ArrayList<>();
-        searchRequestList.addAll(ApiConfig.get().getSourceBeanList());
-        SourceBean home = ApiConfig.get().getHomeSourceBean();
-        searchRequestList.remove(home);
-        searchRequestList.add(0, home);
+        List<SourceBean> searchRequestList = ApiConfig.get().getSearchSourceBeanList(); 
 
         ArrayList<String> siteKey = new ArrayList<>();
         for (SourceBean bean : searchRequestList) {
-            if (!bean.isSearchable()) {
-                continue;
-            }
-            if (mCheckSources != null && !mCheckSources.containsKey(bean.getKey())) {
-                continue;
-            }
+            if (!bean.isSearchable()) continue;
+            if (mCheckSources != null && !mCheckSources.containsKey(bean.getKey())) continue;
             siteKey.add(bean.getKey());
             allRunCount.incrementAndGet();
         }
+        
         if (siteKey.size() <= 0) {
             Toast.makeText(mContext, "没有指定搜索源", Toast.LENGTH_SHORT).show();
             showEmpty();
             return;
         }
+        
         for (String key : siteKey) {
             searchExecutorService.execute(new Runnable() {
                 @Override
                 public void run() {
-                    sourceViewModel.getSearch(key, searchTitle);
+                    sourceViewModel.getSearch(key, searchTitle, currentSearchResultSessionId);
                 }
             });
         }
-    }
-
-    private boolean matchSearchResult(String name, String searchTitle) {
-        if (TextUtils.isEmpty(name) || TextUtils.isEmpty(searchTitle)) return false;
-        searchTitle = searchTitle.trim();
-        String[] arr = searchTitle.split("\\s+");
-        int matchNum = 0;
-        for(String one : arr) {
-            if (name.contains(one)) matchNum++;
-        }
-        return matchNum == arr.length ? true : false;
     }
 
     private void searchData(AbsXml absXml) {
         if (absXml != null && absXml.movie != null && absXml.movie.videoList != null && absXml.movie.videoList.size() > 0) {
             List<Movie.Video> data = new ArrayList<>();
             for (Movie.Video video : absXml.movie.videoList) {
-                if (matchSearchResult(video.name, searchTitle)) data.add(video);
+                data.add(video);
             }
-            if (searchAdapter.getData().size() > 0) {
-                searchAdapter.addData(data);
-            } else {
-                showSuccess();
-                mGridView.setVisibility(View.VISIBLE);
-                searchAdapter.setNewData(data);
+            
+            if (!data.isEmpty()) {
+                runOnUiThread(() -> {
+                    searchAdapter.addData(data);
+                    showSuccess();
+                    mGridView.setVisibility(View.VISIBLE);
+                });
             }
         }
 
         int count = allRunCount.decrementAndGet();
         if (count <= 0) {
-            if (searchAdapter.getData().size() <= 0) {
-                showEmpty();
-            }
-            cancel();
+            runOnUiThread(() -> {
+                if (searchAdapter.getData().isEmpty()) {
+                    showEmpty();
+                }
+            });
         }
     }
-
 
     private void cancel() {
         OkGo.getInstance().cancelTag("search");
@@ -584,7 +557,6 @@ public class SearchActivity extends BaseActivity {
             if (searchExecutorService != null) {
                 searchExecutorService.shutdownNow();
                 searchExecutorService = null;
-                JsLoader.stopAll();
             }
         } catch (Throwable th) {
             th.printStackTrace();

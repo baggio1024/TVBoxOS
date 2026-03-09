@@ -31,15 +31,18 @@ import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.X509TrustManager;
 import okhttp3.Cache;
+import okhttp3.ConnectionPool;
+import okhttp3.ConnectionSpec;
 import okhttp3.Dns;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
+import okhttp3.TlsVersion;
 import okhttp3.dnsoverhttps.DnsOverHttps;
 import okhttp3.internal.Version;
 import xyz.doikki.videoplayer.exo.ExoMediaSourceHelper;
 
 public class OkGoHelper {
-    public static final long DEFAULT_MILLISECONDS = 10000;
+    public static final long DEFAULT_MILLISECONDS = 15000; // 针对低速网环境增加超时容错
     private static final String dnsConfigJson = "[{\"name\": \"腾讯\", \"url\": \"https://doh.pub/dns-query\"},{\"name\": \"阿里\", \"url\": \"https://dns.alidns.com/dns-query\"},{\"name\": \"360\", \"url\": \"https://doh.360.cn/dns-query\"}]";
     
     static OkHttpClient ItvClient = null;
@@ -50,11 +53,7 @@ public class OkGoHelper {
     private static volatile OkHttpClient noRedirectClient = null;
 
     private static boolean isHawkReady() {
-        try {
-            return Hawk.isBuilt();
-        } catch (Throwable th) {
-            return false;
-        }
+        try { return Hawk.isBuilt(); } catch (Throwable th) { return false; }
     }
 
     public static OkHttpClient getDefaultClient() {
@@ -78,22 +77,36 @@ public class OkGoHelper {
     public static synchronized void init() {
         if (defaultClient != null) return;
         initDnsOverHttps();
+        
+        // 优化点：增大连接池，提升 m3u8 切片请求并发效率
+        ConnectionPool pool = new ConnectionPool(30, 5, TimeUnit.MINUTES);
+        
         OkHttpClient.Builder builder = new OkHttpClient.Builder();
+        builder.connectionPool(pool);
+        
         HttpLoggingInterceptor loggingInterceptor = new HttpLoggingInterceptor("OkGo");
         loggingInterceptor.setPrintLevel(HttpLoggingInterceptor.Level.NONE);
         builder.addInterceptor(loggingInterceptor);
+        
         builder.readTimeout(DEFAULT_MILLISECONDS, TimeUnit.MILLISECONDS);
         builder.writeTimeout(DEFAULT_MILLISECONDS, TimeUnit.MILLISECONDS);
         builder.connectTimeout(DEFAULT_MILLISECONDS, TimeUnit.MILLISECONDS);
+        
+        // 开启连接复用和协议优化
+        builder.retryOnConnectionFailure(true);
+        
         if (dnsOverHttps != null) builder.dns(dnsOverHttps);
         try { setOkHttpSsl(builder); } catch (Throwable th) { th.printStackTrace(); }
+        
         HttpHeaders.setUserAgent(Version.userAgent());
         OkHttpClient okHttpClient = builder.build();
         OkGo.getInstance().setOkHttpClient(okHttpClient);
         defaultClient = okHttpClient;
+        
         builder.followRedirects(false);
         builder.followSslRedirects(false);
         noRedirectClient = builder.build();
+        
         initExoOkHttpClient();
         initPicasso(okHttpClient);
     }
@@ -137,15 +150,21 @@ public class OkGoHelper {
 
     static void initExoOkHttpClient() {
         OkHttpClient.Builder builder = new OkHttpClient.Builder();
+        builder.connectionPool(new ConnectionPool(50, 5, TimeUnit.MINUTES)); // 针对播放器增加更大的连接池
         try { setOkHttpSsl(builder); } catch (Throwable th) { th.printStackTrace(); }
         builder.dns(dnsOverHttps != null ? dnsOverHttps : Dns.SYSTEM);
+        builder.retryOnConnectionFailure(true);
         ItvClient = builder.build();
         ExoMediaSourceHelper.getInstance(App.getInstance()).setOkClient(ItvClient);
     }
 
     static void initPicasso(OkHttpClient client) {
         try {
-            Picasso picasso = new Picasso.Builder(App.getInstance()).downloader(new MyOkhttpDownLoader(client)).build();
+            // 优化点：使用 RGB_565 降低 50% 图片内存占用
+            Picasso picasso = new Picasso.Builder(App.getInstance())
+                    .downloader(new MyOkhttpDownLoader(client))
+                    .defaultBitmapConfig(Bitmap.Config.RGB_565)
+                    .build();
             Picasso.setSingletonInstance(picasso);
         } catch (Throwable ignored) {}
     }
@@ -157,8 +176,17 @@ public class OkGoHelper {
                 @Override public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) throws CertificateException {}
                 @Override public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[]{}; }
             };
-            builder.sslSocketFactory(new SSLSocketFactoryCompat(trustAllCert), trustAllCert);
+            
+            SSLSocketFactory factory = new SSLSocketFactoryCompat(trustAllCert);
+            builder.sslSocketFactory(factory, trustAllCert);
             builder.hostnameVerifier(HttpsUtils.UnSafeHostnameVerifier);
+            
+            ConnectionSpec spec = new ConnectionSpec.Builder(ConnectionSpec.MODERN_TLS)
+                    .tlsVersions(TlsVersion.TLS_1_2, TlsVersion.TLS_1_1, TlsVersion.TLS_1_0)
+                    .allEnabledCipherSuites()
+                    .build();
+            builder.connectionSpecs(Arrays.asList(spec, ConnectionSpec.COMPATIBLE_TLS, ConnectionSpec.CLEARTEXT));
+
         } catch (Exception e) { throw new RuntimeException(e); }
     }
 }

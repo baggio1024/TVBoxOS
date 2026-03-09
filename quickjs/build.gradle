@@ -13,14 +13,12 @@ android {
                 abiFilters 'armeabi-v7a', 'x86'
             }
         }
+        ndk {
+            abiFilters 'armeabi-v7a', 'x86'
+        }
     }
 
     buildTypes {
-        all {
-            ndk {
-                abiFilters 'armeabi-v7a', 'x86'
-            }
-        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'

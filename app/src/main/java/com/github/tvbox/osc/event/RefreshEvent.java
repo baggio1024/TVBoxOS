@@ -22,6 +22,7 @@ public class RefreshEvent {
     public static final int TYPE_FILTER_CHANGE = 13;
     public int type;
     public Object obj;
+    public long sessionId = 0; // 新增：用于区分搜索任务的 ID
 
     public RefreshEvent(int type) {
         this.type = type;
@@ -30,5 +31,11 @@ public class RefreshEvent {
     public RefreshEvent(int type, Object obj) {
         this.type = type;
         this.obj = obj;
+    }
+
+    public RefreshEvent(int type, Object obj, long sessionId) {
+        this.type = type;
+        this.obj = obj;
+        this.sessionId = sessionId;
     }
 }

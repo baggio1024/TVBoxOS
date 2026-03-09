@@ -56,19 +56,19 @@ public class PlayerHelper {
         
         if (isEmulator()) {
             ijkCode = "软解码";
-            renderType = 1; // 模拟器强制使用 SurfaceView，解决 gl-format 报错和卡顿
+            renderType = 1; // 模拟器强制使用 SurfaceView
         }
 
         int scale = Hawk.get(HawkConfig.PLAY_SCALE, 0);
         try {
-            playerType = playerCfg.getInt("pl");
-            renderType = playerCfg.getInt("pr");
-            if (!isEmulator()) {
-                ijkCode = playerCfg.getString("ijk");
-            } else {
-                renderType = 1; // 强制覆盖
+            if (playerCfg != null) {
+                if (playerCfg.has("pl")) playerType = playerCfg.getInt("pl");
+                if (playerCfg.has("pr")) renderType = playerCfg.getInt("pr");
+                if (!isEmulator() && playerCfg.has("ijk")) {
+                    ijkCode = playerCfg.getString("ijk");
+                }
+                if (playerCfg.has("sc")) scale = playerCfg.getInt("sc");
             }
-            scale = playerCfg.getInt("sc");
         } catch (JSONException e) {
             e.printStackTrace();
         }
@@ -105,10 +105,18 @@ public class PlayerHelper {
         }
     }
 
+    private static boolean ijkLoaded = false;
     private static void loadIjkLibs() {
-        // 直接跳过 IJK 库加载，避免 native 库不兼容问题
-        // 现代设备可以使用 ExoPlayer 或系统播放器
-        return;
+        if (ijkLoaded) return;
+        try {
+            // 只加载最基础的核心库
+            System.loadLibrary("ijkffmpeg");
+            System.loadLibrary("ijksdl");
+            System.loadLibrary("ijkplayer");
+            ijkLoaded = true;
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
     }
 
     public static void updateCfg(VideoView videoView) {

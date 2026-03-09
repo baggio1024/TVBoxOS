@@ -135,13 +135,18 @@ public class RemoteServer extends NanoHTTPD {
                 fileName = fileName.substring(0, fileName.indexOf('?'));
             }
             if (session.getMethod() == Method.GET) {
+                // 核心修复：处理 PythonLoader 的探测请求
+                Map<String, String> params = session.getParms();
+                if (fileName.equals("/proxy") && "ck".equals(params.get("do"))) {
+                    return NanoHTTPD.newFixedLengthResponse(Response.Status.OK, NanoHTTPD.MIME_PLAINTEXT, "ok");
+                }
+
                 for (RequestProcess process : getRequestList) {
                     if (process.isRequest(session, fileName)) {
                         return process.doResponse(session, fileName, session.getParms(), null);
                     }
                 }
                 if (fileName.equals("/proxy")) {
-                    Map<String, String> params = session.getParms();
                     params.putAll(session.getHeaders());
                     if (params.containsKey("do")) {
                         Object[] rs = ApiConfig.get().proxyLocal(params);

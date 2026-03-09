@@ -10,6 +10,7 @@ import com.chaquo.python.android.AndroidPlatform;
 import com.github.catvod.crawler.Spider;
 import com.github.catvod.crawler.SpiderNull;
 
+import com.github.tvbox.osc.server.RemoteServer;
 import com.github.tvbox.osc.util.OkGoHelper;
 import com.github.tvbox.osc.util.urlhttp.OKCallBack;
 import com.github.tvbox.osc.util.urlhttp.OkHttpUtil;
@@ -166,13 +167,9 @@ public class PythonLoader {
     int port = -1;
 
     public void getPort() {
-        if (port <= 0) {
-            for (int i = 9978; i < 10000; i++) {
-                if (OkHttpUtil.string("http://127.0.0.1:" + i + "/proxy?do=ck&api=python", null).equals("ok")) {
-                    port = i;
-                    return;
-                }
-            }
+        // 核心修复：直接使用主服务器已分配的端口，禁止循环扫描导致的 ConnectException 错误日志
+        if (RemoteServer.serverPort > 0) {
+            port = RemoteServer.serverPort;
         }
     }
 

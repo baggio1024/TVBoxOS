@@ -7,6 +7,7 @@ import java.net.InetAddress;
 import java.net.Socket;
 import java.security.GeneralSecurityException;
 import java.security.cert.CertificateException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -19,9 +20,6 @@ import javax.net.ssl.X509TrustManager;
 
 public class SSLSocketFactoryCompat extends SSLSocketFactory {
     private final SSLSocketFactory defaultFactory;
-    // Android 5.0+ (API level21) provides reasonable default settings
-    // but it still allows SSLv3
-    // https://developer.android.com/about/versions/android-5.0-changes.html#ssl
     static String[] protocols = null;
     static String[] cipherSuites = null;
 
@@ -29,51 +27,51 @@ public class SSLSocketFactoryCompat extends SSLSocketFactory {
         try {
             SSLSocket socket = (SSLSocket) SSLSocketFactory.getDefault().createSocket();
             if (socket != null) {
-                /* set reasonable protocol versions */
-                // - enable all supported protocols (enables TLSv1.1 and TLSv1.2 on Android <5.0)
-                // - remove all SSL versions (especially SSLv3) because they're insecure now
                 List<String> protocols = new LinkedList<>();
-                for (String protocol : socket.getSupportedProtocols())
-                    if (!protocol.toUpperCase().contains("SSL"))
+                for (String protocol : socket.getSupportedProtocols()) {
+                    if (!protocol.toUpperCase().contains("SSL")) {
                         protocols.add(protocol);
-                SSLSocketFactoryCompat.protocols = protocols.toArray(new String[protocols.size()]);
-                /* set up reasonable cipher suites */
+                    }
+                }
+                
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-                    // choose known secure cipher suites
+                    List<String> supported = Arrays.asList(socket.getSupportedProtocols());
+                    if (supported.contains("TLSv1.1") && !protocols.contains("TLSv1.1")) protocols.add("TLSv1.1");
+                    if (supported.contains("TLSv1.2") && !protocols.contains("TLSv1.2")) protocols.add("TLSv1.2");
+                }
+                
+                SSLSocketFactoryCompat.protocols = protocols.toArray(new String[0]);
+                
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
                     List<String> allowedCiphers = Arrays.asList(
-                            // TLS 1.2
-                            "TLS_RSA_WITH_AES_256_GCM_SHA384",
-                            "TLS_RSA_WITH_AES_128_GCM_SHA256",
-                            "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256",
+                            "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
                             "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+                            "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
                             "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
                             "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",
-                            "TLS_ECHDE_RSA_WITH_AES_128_GCM_SHA256",
-                            // maximum interoperability
-                            "TLS_RSA_WITH_3DES_EDE_CBC_SHA",
+                            "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256",
+                            "TLS_RSA_WITH_AES_128_GCM_SHA256",
+                            "TLS_RSA_WITH_AES_256_GCM_SHA384",
+                            "TLS_RSA_WITH_AES_128_CBC_SHA256",
+                            "TLS_RSA_WITH_AES_256_CBC_SHA256",
+                            "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+                            "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
                             "TLS_RSA_WITH_AES_128_CBC_SHA",
-                            // additionally
                             "TLS_RSA_WITH_AES_256_CBC_SHA",
-                            "TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA",
-                            "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA",
-                            "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA",
-                            "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA");
+                            "TLS_RSA_WITH_3DES_EDE_CBC_SHA");
                     List<String> availableCiphers = Arrays.asList(socket.getSupportedCipherSuites());
-                    // take all allowed ciphers that are available and put them into preferredCiphers
                     HashSet<String> preferredCiphers = new HashSet<>(allowedCiphers);
                     preferredCiphers.retainAll(availableCiphers);
-                    /* For maximum security, preferredCiphers should *replace* enabled ciphers (thus disabling
-                     * ciphers which are enabled by default, but have become unsecure), but I guess for
-                     * the security level of DAVdroid and maximum compatibility, disabling of insecure
-                     * ciphers should be a server-side task */
-                    // add preferred ciphers to enabled ciphers
-                    HashSet<String> enabledCiphers = preferredCiphers;
+                    
+                    HashSet<String> enabledCiphers = new HashSet<>(preferredCiphers);
                     enabledCiphers.addAll(new HashSet<>(Arrays.asList(socket.getEnabledCipherSuites())));
-                    SSLSocketFactoryCompat.cipherSuites = enabledCiphers.toArray(new String[enabledCiphers.size()]);
+                    SSLSocketFactoryCompat.cipherSuites = enabledCiphers.toArray(new String[0]);
+                } else {
+                    SSLSocketFactoryCompat.cipherSuites = socket.getEnabledCipherSuites();
                 }
             }
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            // Fallback
         }
     }
 
@@ -83,30 +81,27 @@ public class SSLSocketFactoryCompat extends SSLSocketFactory {
             sslContext.init(null, (tm != null) ? new X509TrustManager[]{tm} : null, null);
             defaultFactory = sslContext.getSocketFactory();
         } catch (GeneralSecurityException e) {
-            throw new AssertionError(); // The system has no TLS. Just give up.
+            throw new AssertionError();
         }
     }
 
     private void upgradeTLS(SSLSocket ssl) {
-        // Android 5.0+ (API level21) provides reasonable default settings
-        // but it still allows SSLv3
-        // https://developer.android.com/about/versions/android-5.0-changes.html#ssl
         if (protocols != null) {
             ssl.setEnabledProtocols(protocols);
         }
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP && cipherSuites != null) {
+        if (cipherSuites != null) {
             ssl.setEnabledCipherSuites(cipherSuites);
         }
     }
 
     @Override
     public String[] getDefaultCipherSuites() {
-        return cipherSuites;
+        return cipherSuites != null ? cipherSuites : defaultFactory.getDefaultCipherSuites();
     }
 
     @Override
     public String[] getSupportedCipherSuites() {
-        return cipherSuites;
+        return cipherSuites != null ? cipherSuites : defaultFactory.getSupportedCipherSuites();
     }
 
     @Override
@@ -149,7 +144,6 @@ public class SSLSocketFactoryCompat extends SSLSocketFactory {
         return ssl;
     }
 
-    //定义一个信任所有证书的TrustManager
     public static final X509TrustManager trustAllCert = new X509TrustManager() {
         @Override
         public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) throws CertificateException {

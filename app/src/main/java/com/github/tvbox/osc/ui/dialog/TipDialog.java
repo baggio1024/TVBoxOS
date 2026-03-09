@@ -26,19 +26,21 @@ public class TipDialog extends BaseDialog {
         leftBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                listener.left();
+                dismiss();
+                if (listener != null) listener.left();
             }
         });
         rightBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                listener.right();
+                dismiss();
+                if (listener != null) listener.right();
             }
         });
         setOnCancelListener(new OnCancelListener() {
             @Override
             public void onCancel(DialogInterface dialog) {
-                listener.cancel();
+                if (listener != null) listener.cancel();
             }
         });
     }

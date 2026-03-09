@@ -33,6 +33,7 @@ public class MovieSort implements Serializable {
         public ArrayList<SortFilter> filters = new ArrayList<>();
         public HashMap<String, String> filterSelect = new HashMap<>();
         public String flag; // 类型
+        public int type_pid = 0; // 新增：父级 ID 字段，默认为 0 (顶级分类)
 
         public SortData() {
         }
@@ -70,6 +71,7 @@ public class MovieSort implements Serializable {
                     ", filters=" + filters +
                     ", filterSelect=" + filterSelect +
                     ", flag='" + flag + '\'' +
+                    ", type_pid=" + type_pid +
                     '}';
         }
     }

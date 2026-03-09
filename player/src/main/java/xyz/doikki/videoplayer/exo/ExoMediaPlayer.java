@@ -2,6 +2,7 @@ package xyz.doikki.videoplayer.exo;
 
 import android.content.Context;
 import android.content.res.AssetFileDescriptor;
+import android.os.Build;
 import android.util.Log;
 import android.view.Surface;
 import android.view.SurfaceHolder;
@@ -64,11 +65,35 @@ public class ExoMediaPlayer extends AbstractPlayer implements Player.Listener {
 
     @Override
     public void initPlayer() {
+        // 确保彻底释放旧实例，解决 IllegalStateException
+        if (mInternalPlayer != null) {
+            release();
+        }
+
+        // 初始化 TrackSelector
+        if (mTrackSelector == null) {
+            mTrackSelector = new DefaultTrackSelector(mAppContext);
+        }
+        if (mTrackSelector instanceof DefaultTrackSelector) {
+            // 配置容错参数，ExoPlayer 2.14.2 兼容写法
+            DefaultTrackSelector.Parameters parameters = ((DefaultTrackSelector) mTrackSelector).buildUponParameters()
+                    .setExceedRendererCapabilitiesIfNecessary(true) // 允许超出能力限制
+                    .setAllowVideoNonSeamlessAdaptiveness(true)    // 允许非无缝切换
+                    .build();
+            ((DefaultTrackSelector) mTrackSelector).setParameters(parameters);
+        }
+
+        // 初始化 RenderersFactory
+        if (mRenderersFactory == null) {
+            mRenderersFactory = new DefaultRenderersFactory(mAppContext)
+                    .setEnableDecoderFallback(true) // 硬件解码失败时允许回退
+                    .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER);
+        }
+
         mInternalPlayer = new SimpleExoPlayer.Builder(
                 mAppContext,
-                mRenderersFactory == null ? mRenderersFactory = new DefaultRenderersFactory(mAppContext).setEnableDecoderFallback(true)  // 启用解码器回退，避免硬件加速问题
-                        .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER) : mRenderersFactory,
-                mTrackSelector == null ? mTrackSelector = new DefaultTrackSelector(mAppContext) : mTrackSelector,
+                mRenderersFactory,
+                mTrackSelector,
                 new DefaultMediaSourceFactory(mAppContext),
                 mLoadControl == null ? mLoadControl = new DefaultLoadControl() : mLoadControl,
                 DefaultBandwidthMeter.getSingletonInstance(mAppContext),
@@ -76,11 +101,15 @@ public class ExoMediaPlayer extends AbstractPlayer implements Player.Listener {
                 .build();
         setOptions();
 
-        // 播放器日志（当开启日志且 mTrackSelector 为 MappingTrackSelector 时）
+        // 播放器日志
         if (VideoViewManager.getConfig().mIsEnableLog && mTrackSelector instanceof MappingTrackSelector) {
             mInternalPlayer.addAnalyticsListener(new EventLogger((MappingTrackSelector) mTrackSelector, "ExoPlayer"));
         }
-        if(trackSelector == null)trackSelector=(DefaultTrackSelector)mTrackSelector;
+        
+        if (mTrackSelector instanceof DefaultTrackSelector) {
+            trackSelector = (DefaultTrackSelector) mTrackSelector;
+        }
+
         mInternalPlayer.addListener(this);
     }
 

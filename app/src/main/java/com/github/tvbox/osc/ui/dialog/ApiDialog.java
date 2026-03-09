@@ -154,7 +154,7 @@ public class ApiDialog extends BaseDialog {
         findViewById(R.id.llQuickConfig).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                String quickUrl = "https://tv.cngui.eu.org/api/tvbox/subscribe?token=mytoken&adFilter=true";
+                String quickUrl = "https://tv.cngui.eu.org/api/tvbox/subscribe?token=tvbox&adFilter=true";
                 inputApi.setText(quickUrl);
                 inputApiLive.setText(quickUrl);
                 HistoryHelper.setApiHistory(quickUrl);

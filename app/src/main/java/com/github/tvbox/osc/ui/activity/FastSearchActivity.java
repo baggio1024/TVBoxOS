@@ -3,6 +3,7 @@ package com.github.tvbox.osc.ui.activity;
 import android.content.Intent;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -71,6 +72,7 @@ public class FastSearchActivity extends BaseActivity {
     private HashMap<String, ArrayList<Movie.Video>> resultVods; // 搜索结果
     private final List<String> quickSearchWord = new ArrayList<>();
     private HashMap<String, String> mCheckSources = null;
+    private long currentSearchResultSessionId = 0; // 搜索会话标记
 
     private final View.OnFocusChangeListener focusChangeListener = new View.OnFocusChangeListener() {
         @Override
@@ -141,7 +143,7 @@ public class FastSearchActivity extends BaseActivity {
                 child.setFocusable(true);
                 child.setOnFocusChangeListener(focusChangeListener);
                 TextView t = (TextView) child;
-                if (t.getText() == "全部") {
+                if (t.getText().equals("全部")) {
                     t.requestFocus();
                 }
             }
@@ -176,7 +178,6 @@ public class FastSearchActivity extends BaseActivity {
                         if (searchExecutorService != null) {
                             pauseRunnable = searchExecutorService.shutdownNow();
                             searchExecutorService = null;
-                            JsLoader.stopAll();
                         }
                     } catch (Throwable th) {
                         th.printStackTrace();
@@ -203,7 +204,6 @@ public class FastSearchActivity extends BaseActivity {
                         if (searchExecutorService != null) {
                             pauseRunnable = searchExecutorService.shutdownNow();
                             searchExecutorService = null;
-                            JsLoader.stopAll();
                         }
                     } catch (Throwable th) {
                         th.printStackTrace();
@@ -246,9 +246,9 @@ public class FastSearchActivity extends BaseActivity {
         mGridView.setVisibility(View.GONE);
         mGridViewFilter.setVisibility(View.VISIBLE);
         String key = spNames.get(spName);
-        if (key.isEmpty()) return;
+        if (key == null || key.isEmpty()) return;
 
-        if (searchFilterKey == key) return;
+        if (searchFilterKey.equals(key)) return;
         searchFilterKey = key;
 
         List<Movie.Video> list = resultVods.get(key);
@@ -260,40 +260,6 @@ public class FastSearchActivity extends BaseActivity {
         quickSearchWord.addAll(SearchHelper.splitWords(searchTitle));
         List<String> words = new ArrayList<>(new HashSet<>(quickSearchWord));
         EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_QUICK_SEARCH_WORD, words));
-        // 分词
-//        OkGo.<String>get("http://api.pullword.com/get.php?source=" + URLEncoder.encode(searchTitle) + "&param1=0&param2=0&json=1")
-//                .tag("fenci")
-//                .execute(new AbsCallback<String>() {
-//                    @Override
-//                    public String convertResponse(okhttp3.Response response) throws Throwable {
-//                        if (response.body() != null) {
-//                            return response.body().string();
-//                        } else {
-//                            throw new IllegalStateException("网络请求错误");
-//                        }
-//                    }
-//
-//                    @Override
-//                    public void onSuccess(Response<String> response) {
-//                        String json = response.body();
-//                        quickSearchWord.clear();
-//                        try {
-//                            for (JsonElement je : new Gson().fromJson(json, JsonArray.class)) {
-//                                quickSearchWord.add(je.getAsJsonObject().get("t").getAsString());
-//                            }
-//                        } catch (Throwable th) {
-//                            th.printStackTrace();
-//                        }
-//                        quickSearchWord.addAll(SearchHelper.splitWords(searchTitle));
-//                        List<String> words = new ArrayList<>(new HashSet<>(quickSearchWord));
-//                        EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_QUICK_SEARCH_WORD, words));
-//                    }
-//
-//                    @Override
-//                    public void onError(Response<String> response) {
-//                        super.onError(response);
-//                    }
-//                });
     }
 
     private void initData() {
@@ -318,6 +284,10 @@ public class FastSearchActivity extends BaseActivity {
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void refresh(RefreshEvent event) {
         if (event.type == RefreshEvent.TYPE_SEARCH_RESULT) {
+            // 核心修复：检查会话 ID
+            if (event.sessionId != currentSearchResultSessionId) {
+                return;
+            }
             try {
                 searchData(event.obj == null ? null : (AbsXml) event.obj);
             } catch (Exception e) {
@@ -330,8 +300,7 @@ public class FastSearchActivity extends BaseActivity {
             }
         }
         if (mSearchTitle != null) {
-//            mSearchTitle.setText(String.format("搜索(%d/%d)", resultVods.size(), startSearchNum));
-            mSearchTitle.setText(String.format("已搜索( %d )", resultVods.size()));
+            mSearchTitle.setText(String.format("已搜索( % d )", resultVods.size()));
         }
     }
 
@@ -365,11 +334,13 @@ public class FastSearchActivity extends BaseActivity {
     private final AtomicInteger allRunCount = new AtomicInteger(0);
 
     private void searchResult() {
+        // 生成新的会话 ID
+        currentSearchResultSessionId = System.currentTimeMillis();
+        
         try {
             if (searchExecutorService != null) {
                 searchExecutorService.shutdownNow();
                 searchExecutorService = null;
-                JsLoader.stopAll();
             }
         } catch (Throwable th) {
             th.printStackTrace();
@@ -379,12 +350,7 @@ public class FastSearchActivity extends BaseActivity {
             allRunCount.set(0);
         }
         searchExecutorService = Executors.newFixedThreadPool(5);
-        List<SourceBean> searchRequestList = new ArrayList<>();
-        searchRequestList.addAll(ApiConfig.get().getSourceBeanList());
-        SourceBean home = ApiConfig.get().getHomeSourceBean();
-        searchRequestList.remove(home);
-        searchRequestList.add(0, home);
-
+        List<SourceBean> searchRequestList = ApiConfig.get().getSearchSourceBeanList();
 
         ArrayList<String> siteKey = new ArrayList<>();
         ArrayList<String> hots = new ArrayList<>();
@@ -403,12 +369,18 @@ public class FastSearchActivity extends BaseActivity {
             allRunCount.incrementAndGet();
         }
 
+        if (siteKey.isEmpty()) {
+            Toast.makeText(mContext, "没有指定搜索源", Toast.LENGTH_SHORT).show();
+            showEmpty();
+            return;
+        }
+
         for (String key : siteKey) {
             searchExecutorService.execute(new Runnable() {
                 @Override
                 public void run() {
                     try {
-                        sourceViewModel.getSearch(key, searchTitle);
+                        sourceViewModel.getSearch(key, searchTitle, currentSearchResultSessionId);
                     } catch (Exception e) {
 
                     }
@@ -422,15 +394,15 @@ public class FastSearchActivity extends BaseActivity {
         try {
             String name = "";
             for (String n : spNames.keySet()) {
-                if (spNames.get(n) == key) {
+                if (spNames.get(n).equals(key)) {
                     name = n;
                 }
             }
-            if (name == "") return key;
+            if (name.isEmpty()) return key;
 
             List<String> names = spListAdapter.getData();
             for (int i = 0; i < names.size(); ++i) {
-                if (name == names.get(i)) {
+                if (name.equals(names.get(i))) {
                     return key;
                 }
             }
@@ -444,13 +416,7 @@ public class FastSearchActivity extends BaseActivity {
 
     private boolean matchSearchResult(String name, String searchTitle) {
         if (TextUtils.isEmpty(name) || TextUtils.isEmpty(searchTitle)) return false;
-        searchTitle = searchTitle.trim();
-        String[] arr = searchTitle.split("\\s+");
-        int matchNum = 0;
-        for(String one : arr) {
-            if (name.contains(one)) matchNum++;
-        }
-        return matchNum == arr.length;
+        return true; // No filter to show raw result
     }
 
     private void searchData(AbsXml absXml) {
@@ -465,7 +431,7 @@ public class FastSearchActivity extends BaseActivity {
                     resultVods.put(video.sourceKey, new ArrayList<Movie.Video>());
                 }
                 resultVods.get(video.sourceKey).add(video);
-                if (video.sourceKey != lastSourceKey) {
+                if (!video.sourceKey.equals(lastSourceKey)) {
                     lastSourceKey = this.addWordAdapterIfNeed(video.sourceKey);
                 }
             }
@@ -481,11 +447,11 @@ public class FastSearchActivity extends BaseActivity {
         }
 
         int count = allRunCount.decrementAndGet();
+        Log.i("SearchDebug", "[FastActivity] 剩余站点数: " + count);
         if (count <= 0) {
             if (searchAdapter.getData().size() == 0) {
                 showEmpty();
             }
-            cancel();
         }
     }
 
@@ -501,7 +467,6 @@ public class FastSearchActivity extends BaseActivity {
             if (searchExecutorService != null) {
                 searchExecutorService.shutdownNow();
                 searchExecutorService = null;
-                JsLoader.stopAll();
             }
         } catch (Throwable th) {
             th.printStackTrace();

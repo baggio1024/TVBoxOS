@@ -18,48 +18,51 @@ public class SearchHelper {
         HashMap<String, String> mCheckSources;
         try {
             String api = Hawk.get(HawkConfig.API_URL, "");
-            if(api.isEmpty())return null;
+            if(api.isEmpty()) return null;
             HashMap<String, HashMap<String, String>> mCheckSourcesForApi = Hawk.get(HawkConfig.SOURCES_FOR_SEARCH, new HashMap<>());
             mCheckSources = mCheckSourcesForApi.get(api);
         } catch (Exception e) {
             return null;
         }
+        
+        // 核心修复：如果缓存的搜索源为空，或者配置更新了站点，重新获取
+        HashMap<String, String> currentSources = getSources();
         if (mCheckSources == null || mCheckSources.isEmpty()) {
-            mCheckSources = getSources();
+            mCheckSources = currentSources;
+        } else {
+            // 自动同步：确保新增的站点被选中
+            boolean changed = false;
+            for (String key : currentSources.keySet()) {
+                if (!mCheckSources.containsKey(key)) {
+                    mCheckSources.put(key, "1");
+                    changed = true;
+                }
+            }
+            // 移除已经不存在的站点
+            Iterator<Map.Entry<String, String>> it = mCheckSources.entrySet().iterator();
+            while (it.hasNext()) {
+                if (!currentSources.containsKey(it.next().getKey())) {
+                    it.remove();
+                    changed = true;
+                }
+            }
+            if (changed) {
+                putCheckedSources(mCheckSources, false);
+            }
         }
-//        else {
-//            HashMap<String, String> newSources = getSources();
-//            for (Map.Entry<String, String> entry : newSources.entrySet()) {
-//                String newKey = entry.getKey();
-//                String newValue = entry.getValue();
-//                if (!mCheckSources.containsKey(newKey)) {
-//                    mCheckSources.put(newKey, newValue);
-//                }
-//            }
-//            Iterator<Map.Entry<String, String>> iterator = mCheckSources.entrySet().iterator();
-//            while (iterator.hasNext()) {
-//                Map.Entry<String, String> oldEntry = iterator.next();
-//                String oldKey = oldEntry.getKey();
-//                if (!newSources.containsKey(oldKey)) {
-//                    iterator.remove();
-//                }
-//            }
-//        }
         return mCheckSources;
     }
 
-    public static void putCheckedSources(HashMap<String, String> mCheckSources,boolean isAll) {
+    public static void putCheckedSources(HashMap<String, String> mCheckSources, boolean isAll) {
         String api = Hawk.get(HawkConfig.API_URL, "");
         if (api.isEmpty()) {
             return;
         }
-        HashMap<String, HashMap<String, String>> mCheckSourcesForApi = Hawk.get(HawkConfig.SOURCES_FOR_SEARCH,null);
+        HashMap<String, HashMap<String, String>> mCheckSourcesForApi = Hawk.get(HawkConfig.SOURCES_FOR_SEARCH, new HashMap<>());
 
         if(isAll){
-            if (mCheckSourcesForApi == null) return;
-            if (mCheckSourcesForApi.containsKey(api)) mCheckSourcesForApi.remove(api);
+            mCheckSourcesForApi.remove(api);
         }else {
-            if (mCheckSourcesForApi == null) mCheckSourcesForApi = new HashMap<>();
             mCheckSourcesForApi.put(api, mCheckSources);
         }
         SearchActivity.setCheckedSourcesForSearch(mCheckSources);
@@ -68,10 +71,9 @@ public class SearchHelper {
 
     public static HashMap<String, String> getSources(){
         HashMap<String, String> mCheckSources = new HashMap<>();
-        for (SourceBean bean : ApiConfig.get().getSourceBeanList()) {
-            if (!bean.isSearchable()) {
-                continue;
-            }
+        // 获取所有可搜索的源
+        List<SourceBean> searchList = ApiConfig.get().getSearchSourceBeanList();
+        for (SourceBean bean : searchList) {
             mCheckSources.put(bean.getKey(), "1");
         }
         return mCheckSources;
@@ -80,9 +82,13 @@ public class SearchHelper {
     public static List<String> splitWords(String text) {
         List<String> result = new ArrayList<>();
         result.add(text);
-        String[] parts = text.split("\\W+");
-        if (parts.length > 1) {
-            result.addAll(Arrays.asList(parts));
+        if (text != null) {
+            String[] parts = text.split("\\W+");
+            if (parts.length > 1) {
+                for (String p : parts) {
+                    if (p.length() > 1) result.add(p);
+                }
+            }
         }
         return result;
     }

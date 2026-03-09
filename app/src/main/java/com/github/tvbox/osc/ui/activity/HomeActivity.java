@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
+import android.util.Log;
 import android.view.View;
 import android.view.animation.AlphaAnimation;
 import android.view.animation.Animation;
@@ -56,6 +57,7 @@ import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 
@@ -99,6 +101,7 @@ public class HomeActivity extends BaseActivity {
 
     @Override
     protected void init() {
+        Log.i("SpeedLog", "[Activity] HomeActivity init 开始");
         EventBus.getDefault().register(this);
         ControlManager.get().startServer();
         initView();
@@ -214,22 +217,28 @@ public class HomeActivity extends BaseActivity {
         tvName.setOnClickListener(v -> {
             FastClickCheckUtil.check(v);
             if(dataInitOk && jarInitOk){
+                // 执行全量清理
+                SourceViewModel.clearAllCache(); // 清理内存缓存
+                Hawk.deleteAll(); // 清理所有本地存储
+                
                 String cspCachePath = FileUtils.getFilePath()+"/csp/";
                 String jar=ApiConfig.get().getHomeSourceBean().getJar();
                 String jarUrl=!jar.isEmpty()?jar:ApiConfig.get().getSpider();
                 File cspCacheDir = new File(cspCachePath + MD5.string2MD5(jarUrl)+".jar");
-                Toast.makeText(mContext, "jar缓存已清除", Toast.LENGTH_LONG).show();
-                if (!cspCacheDir.exists()){
-                    refreshHome();
-                    return;
-                }
+                
                 new Thread(() -> {
                     try {
-                        FileUtils.deleteFile(cspCacheDir);
+                        if (cspCacheDir.exists()) {
+                            FileUtils.deleteFile(cspCacheDir);
+                        }
                         ApiConfig.get().clearJarLoader();
-                        refreshHome();
+                        mHandler.post(() -> {
+                            Toast.makeText(mContext, "缓存及分类数据已清除", Toast.LENGTH_LONG).show();
+                            refreshHome();
+                        });
                     } catch (Exception e) {
                         e.printStackTrace();
+                        mHandler.post(() -> refreshHome());
                     }
                 }).start();
 
@@ -291,72 +300,98 @@ public class HomeActivity extends BaseActivity {
             }
             showSuccess();
             String sourceKey = ApiConfig.get().getHomeSourceBean().getKey();
+            
+            // 彻底还原逻辑：移除之前的 type_pid != 0 物理拦截，允许所有分类显示
             if (absXml != null && absXml.classes != null && absXml.classes.sortList != null) {
+                // 不再进行 Iterator 物理移除，由 DefaultConfig.adjustSort 统一处理敏感词过滤
                 sortAdapter.setNewData(DefaultConfig.adjustSort(sourceKey, absXml.classes.sortList, true));
             } else {
                 sortAdapter.setNewData(DefaultConfig.adjustSort(sourceKey, new ArrayList<>(), true));
             }
+
             initViewPager(absXml);
             SourceBean home = ApiConfig.get().getHomeSourceBean();
             if (home != null && home.getName() != null && !home.getName().isEmpty()) tvName.setText(home.getName());
             tvName.clearAnimation();
+            Log.i("SpeedLog", "[最终完成] 首页数据展示总耗时: " + (System.currentTimeMillis() - startTotalTime) + "ms");
         });
     }
 
+    private long startTotalTime = 0;
     private void initData() {
+        if (startTotalTime == 0) startTotalTime = System.currentTimeMillis();
         SourceBean homeSource = ApiConfig.get().getHomeSourceBean();
         String sourceKey = (homeSource != null) ? homeSource.getKey() : "";
         
+        Log.i("SpeedLog", "[Activity] initData 被调用, dataInitOk=" + dataInitOk + ", jarInitOk=" + jarInitOk + ", source=" + sourceKey);
+
         if (dataInitOk && jarInitOk) {
             if (sourceKey == null) sourceKey = "";
             sourceViewModel.getSort(sourceKey);
             return;
         }
+
+        if (dataInitOk && (homeSource != null && homeSource.getType() != 3)) {
+            Log.i("SpeedLog", "[Activity] 主站非JS站点，开始并行预加载分类");
+            sourceViewModel.getSort(sourceKey);
+            checkAndLoadJar();
+            return;
+        }
+
         tvNameAnimation();
         showLoading();
         
-        if (dataInitOk && !jarInitOk) {
-            String spider = ApiConfig.get().getSpider();
-            if (spider != null && !spider.isEmpty()) {
-                ApiConfig.get().loadJar(useCacheConfig, spider, new ApiConfig.LoadConfigCallback() {
-                    @Override
-                    public void success() {
-                        jarInitOk = true;
-                        mHandler.postDelayed(() -> initData(), 50);
-                    }
-                    @Override public void notice(String msg) { mHandler.post(() -> Toast.makeText(HomeActivity.this, msg, Toast.LENGTH_SHORT).show()); }
-                    @Override public void error(String msg) {
-                        jarInitOk = true; dataInitOk = true;
-                        mHandler.postDelayed(() -> initData(), 50);
-                    }
-                });
-            } else if (sourceKey != null && sourceKey.equals("douban_recommend")) {
-                jarInitOk = true; dataInitOk = true; initData();
-            }
-            return;
-        }
-        ApiConfig.get().loadConfig(useCacheConfig, new ApiConfig.LoadConfigCallback() {
-            @Override public void notice(String msg) { mHandler.post(() -> Toast.makeText(HomeActivity.this, msg, Toast.LENGTH_SHORT).show()); }
-            @Override public void success() {
-                dataInitOk = true;
-                if (ApiConfig.get().getSpider().isEmpty()) jarInitOk = true;
-                mHandler.postDelayed(() -> initData(), 50);
-            }
-            @Override public void error(String msg) {
-                if (msg.equalsIgnoreCase("-1")) {
-                    mHandler.post(() -> { dataInitOk = true; jarInitOk = true; initData(); });
-                    return;
+        if (!dataInitOk) {
+            Log.i("SpeedLog", "[Activity] 发起 loadConfig");
+            ApiConfig.get().loadConfig(useCacheConfig, new ApiConfig.LoadConfigCallback() {
+                @Override public void notice(String msg) { mHandler.post(() -> Toast.makeText(HomeActivity.this, msg, Toast.LENGTH_SHORT).show()); }
+                @Override public void success() {
+                    dataInitOk = true;
+                    initData(); 
                 }
-                mHandler.post(() -> {
-                    TipDialog dialog = new TipDialog(HomeActivity.this, msg, "重试", "取消", new TipDialog.OnListener() {
-                        @Override public void left() { mHandler.post(() -> { initData(); }); }
-                        @Override public void right() { dataInitOk = true; jarInitOk = true; initData(); }
-                        @Override public void cancel() { dataInitOk = true; jarInitOk = true; initData(); }
+                @Override public void error(String msg) {
+                    showSuccess();
+                    if (msg.equalsIgnoreCase("-1")) {
+                        dataInitOk = true; jarInitOk = true; initData();
+                        return;
+                    }
+                    mHandler.post(() -> {
+                        Toast.makeText(HomeActivity.this, "配置加载失败！", Toast.LENGTH_LONG).show();
+                        TipDialog dialog = new TipDialog(HomeActivity.this, msg, "重试", "取消", new TipDialog.OnListener() {
+                            @Override public void left() { mHandler.post(() -> { initData(); }); }
+                            @Override public void right() { dataInitOk = true; jarInitOk = true; initData(); }
+                            @Override public void cancel() { dataInitOk = true; jarInitOk = true; initData(); }
+                        });
+                        dialog.show();
                     });
-                    dialog.show();
-                });
-            }
-        }, this);
+                }
+            }, this);
+        } else {
+            checkAndLoadJar();
+        }
+    }
+
+    private void checkAndLoadJar() {
+        String spider = ApiConfig.get().getSpider();
+        if (spider != null && !spider.isEmpty() && !jarInitOk) {
+            Log.i("SpeedLog", "[Activity] 发起 loadJar: " + spider);
+            ApiConfig.get().loadJar(useCacheConfig, spider, new ApiConfig.LoadConfigCallback() {
+                @Override public void success() {
+                    jarInitOk = true;
+                    SourceBean homeSource = ApiConfig.get().getHomeSourceBean();
+                    if (homeSource != null && homeSource.getType() == 3) {
+                        initData();
+                    }
+                }
+                @Override public void notice(String msg) {}
+                @Override public void error(String msg) {
+                    jarInitOk = true; 
+                    initData();
+                }
+            });
+        } else {
+            jarInitOk = true;
+        }
     }
 
     private void initViewPager(AbsSortXml absXml) {
